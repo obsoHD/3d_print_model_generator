@@ -457,32 +457,45 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
 .out-del:hover{color:#ef4444 !important}
 .out-dl:hover{color:#5eead4}
 
-/* Responsive */
+/* ── Responsive ───────────────────────────────────────────────────────── */
+/* Desktop tiers: keep the 3-col app-shell, just tighten. */
 @media(max-width:1280px){main{grid-template-columns:240px 1fr 280px;gap:12px;padding:12px}}
-@media(max-width:1024px){main{grid-template-columns:1fr;overflow-y:auto}
-  .col{overflow:visible}
-  html,body{max-width:100%;overflow-x:hidden}
-  button,.wz-card{min-height:44px}}
+@media(max-width:1080px){main{grid-template-columns:230px 1fr;gap:12px}
+  main>.col:last-child{grid-column:1 / -1}}   /* outputs/history wrap full-width under */
 
-/* Phone LANDSCAPE: two readable columns (controls | preview), sticky header,
-   timeline preview stays usable held horizontally. */
-@media(max-width:960px) and (orientation:landscape){
-  main{grid-template-columns:minmax(220px,1fr) 1.4fr;gap:10px;padding:10px;overflow-y:auto}
-  header{position:sticky;top:0;z-index:40}
-  .col{overflow:visible}
-  main>.col:last-child{grid-column:1 / -1}   /* outputs/history span full width below */
-}
-/* Very short viewports (phone landscape): trim chrome so content fits */
-@media(max-height:560px){
-  header{padding:6px 12px}
-  main{padding:8px;gap:8px}
-  .steps,.steps-6,.steps-9{font-size:11px}
-}
-/* Phone PORTRAIT: single column, larger tap targets already set above */
-@media(max-width:640px){
-  header{flex-wrap:wrap;gap:6px;padding:8px 10px}
-  .stats-grid,.form-2,.nm-row{grid-template-columns:1fr}
+/* MOBILE / TABLET (<=860px): abandon the fixed-viewport app-shell and let the
+   whole page scroll as ONE document. The desktop model (html/body height:100%
+   + overflow:hidden + per-column internal scroll) cuts content off and can't
+   scroll on phones — that was the "completely broken" cause. */
+@media(max-width:860px){
+  html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
+  body{display:block}
+  header{position:sticky;top:0;flex-wrap:wrap;gap:8px;row-gap:6px;padding:10px 14px}
+  main{display:block;height:auto;overflow:visible;padding:12px}
+  .col{display:block;height:auto;overflow:visible;padding:0;margin-bottom:14px}
+  .col>*{margin-bottom:12px}
+  .col>*:last-child{margin-bottom:0}
+  /* nothing wider than the screen */
+  img,canvas,video,.card,.wz,.modal-box{max-width:100%}
+  /* comfortable tap targets */
+  button,.wz-card,.tab,.wz-tab,.out-row{min-height:44px}
+  /* dense grids relax to 2-up */
+  .stats-grid,.form-2,.nm-row,.prog-grid{grid-template-columns:1fr 1fr}
   .wz-cards,.wz-views{grid-template-columns:1fr}
+  /* preview keeps a sensible height (taller for portrait) */
+  .preview-wrap{width:100%;aspect-ratio:4/3}
+  /* timeline shrinks to fit */
+  .steps{padding:0 1%}
+  .steps .step-label{font-size:9px}.steps .step-sub{font-size:8px}
+  /* wizard + new-run modal become full-screen scrollable sheets */
+  .wz-back,.modal-backdrop{align-items:flex-start;overflow-y:auto;padding:0}
+  .wz,.modal-box{width:100%;max-width:100%;max-height:none;min-height:100dvh;border-radius:0}
+}
+@media(max-width:480px){
+  header{padding:8px 10px}
+  .brand-sub{display:none}
+  .stats-grid,.form-2,.nm-row,.prog-grid{grid-template-columns:1fr}
+  main{padding:10px}
 }
 </style>
 <script type="importmap">

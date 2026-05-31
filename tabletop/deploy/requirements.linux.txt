@@ -49,6 +49,8 @@ pytorch-lightning
 PyMCubes
 plyfile
 joblib
+wandb           # CraftsMan imports it at module load (logging)
+tensorboardX    # CraftsMan logger
 
 # --- image / background removal ---
 pillow
