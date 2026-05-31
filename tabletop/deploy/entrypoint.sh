@@ -23,6 +23,15 @@ export GEN3D_MODELS_DIR="${GEN3D_MODELS_DIR:-$DATA/models}"
 export GEN3D_OUTPUTS_DIR="${GEN3D_OUTPUTS_DIR:-$DATA/outputs}"
 export HF_HOME="${HF_HOME:-$DATA/hf}"
 
+# Some libs cache models under $HOME, NOT HF_HOME — which means they re-download
+# every rebuild. Symlink those onto /data so they persist:
+#   - hy3dgen (Hunyuan 2.1/2mv) → ~/.cache/hy3dgen  (the multi-GB .ckpt weights!)
+#   - rembg                     → ~/.u2net
+mkdir -p "$DATA/cache/hy3dgen" "$DATA/u2net" /root/.cache
+[ -L /root/.cache/hy3dgen ] || { rm -rf /root/.cache/hy3dgen; ln -s "$DATA/cache/hy3dgen" /root/.cache/hy3dgen; }
+[ -L /root/.u2net ]         || { rm -rf /root/.u2net;         ln -s "$DATA/u2net"         /root/.u2net; }
+export U2NET_HOME="$DATA/u2net"
+
 echo "[entrypoint] GPUs: ${NVIDIA_VISIBLE_DEVICES:-?}  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 python - <<'PY'
 import torch
