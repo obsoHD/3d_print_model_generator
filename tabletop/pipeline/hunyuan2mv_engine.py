@@ -59,12 +59,25 @@ def generate(out_path: str,
            "--octree-resolution", str(octree_resolution)]
     print(f"  [hunyuan2mv] multi-view inference (front/left/back, "
           f"{steps} steps, octree={octree_resolution})...", flush=True)
-    env = {**os.environ, "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
-    proc = subprocess.run(cmd, capture_output=True, text=True,
-                          cwd=str(LIB_DIR), timeout=timeout_s, env=env)
+    env = {**os.environ, "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+           "PYTHONUNBUFFERED": "1", "HF_HUB_VERBOSITY": "info"}
+    # Stream child output LIVE (model download + diffusion) into the run log.
+    import collections
+    tail = collections.deque(maxlen=80)
+    proc = subprocess.Popen(cmd, cwd=str(LIB_DIR), env=env, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            bufsize=1)
+    try:
+        for raw in proc.stdout:
+            ln = raw.rstrip("\n")
+            print(f"        {ln}", flush=True)
+            tail.append(ln)
+        proc.wait(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        raise RuntimeError(f"Hunyuan3D-2mv timed out after {timeout_s}s")
     if proc.returncode != 0:
         raise RuntimeError(
-            f"Hunyuan3D-2mv failed (exit {proc.returncode}).\n"
-            f"stderr tail:\n{proc.stderr[-2000:]}")
+            f"Hunyuan3D-2mv failed (exit {proc.returncode}).\n" + "\n".join(tail))
     print(f"  [hunyuan2mv] mesh saved -> {out.name}", flush=True)
     return str(out)

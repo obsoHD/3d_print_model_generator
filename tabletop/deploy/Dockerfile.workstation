@@ -61,6 +61,11 @@ RUN git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1.git /ap
  && python -m pip install -e /app/tabletop/Hunyuan3D-2.1/hy3dshape || true \
  && python -m pip install -e /app/tabletop/Hunyuan3D-2/hy3dgen      || true
 
+# --- TripoSG engine (SDF image-to-3D, sharpest watertight geometry). Code only;
+#     VAST-AI/TripoSG + briaai/RMBG-1.4 weights auto-download at first run to
+#     /data (persisted). Uses diso (already built above) for the DMC decoder. ---
+RUN git clone --depth 1 https://github.com/VAST-AI-Research/TripoSG.git /app/tabletop/TripoSG
+
 # pymeshlab's Qt plugins (used by hy3dshape postprocessors) link libOpenGL.so.0
 # et al. Install the GL runtime libs as a late layer so the heavy steps above
 # stay cached. Without these, pymeshlab imports but every filter fails to load.

@@ -62,13 +62,24 @@ def generate(image_path: str, out_path: str,
            "--faces",    str(faces)]
     print(f"  [triposg] inference ({steps} steps, guidance={guidance}, "
           f"watertight by construction)...", flush=True)
-    proc = subprocess.run(cmd, capture_output=True, text=True,
-                          cwd=str(LIB_DIR), timeout=timeout_s)
+    env = {**os.environ, "PYTHONUNBUFFERED": "1", "HF_HUB_VERBOSITY": "info"}
+    import collections
+    tail = collections.deque(maxlen=80)
+    proc = subprocess.Popen(cmd, cwd=str(LIB_DIR), env=env, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            bufsize=1)
+    try:
+        for raw in proc.stdout:
+            ln = raw.rstrip("\n")
+            print(f"        {ln}", flush=True)
+            tail.append(ln)
+        proc.wait(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        raise RuntimeError(f"TripoSG timed out after {timeout_s}s")
     if proc.returncode != 0:
         raise RuntimeError(
-            f"TripoSG failed (exit {proc.returncode}).\n"
-            f"stderr tail:\n{proc.stderr[-2000:]}"
-        )
+            f"TripoSG failed (exit {proc.returncode}).\n" + "\n".join(tail))
     print(f"  [triposg] mesh saved -> {out.name}", flush=True)
     return str(out)
 

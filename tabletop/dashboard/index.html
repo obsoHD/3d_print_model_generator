@@ -801,7 +801,7 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
   display:flex;align-items:center;justify-content:center;text-align:center;cursor:pointer;
   background:var(--bg2,#141b27);color:var(--dim2);font-size:12px;position:relative;overflow:hidden}
 .wz-drop:hover{border-color:var(--accent,#37e6a4)}
-.wz-drop img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#0c1118}
+.wz-drop img,.wz-drop video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#0c1118}
 .wz-views{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .wz-views .wz-drop{min-height:150px;flex-direction:column;gap:6px}
 .wz-vlabel{font-size:11px;font-weight:700;color:var(--accent,#37e6a4);letter-spacing:.06em}
@@ -833,13 +833,19 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
           <h3>Single-view Hunyuan</h3>
           <p>One image → 3D. Generate from a prompt or upload one image (the clean
              grey render is ideal). Fast. Front is faithful, the back is inferred.</p>
-          <span class="tag">hunyuan21 · octree 384</span>
+          <span class="tag">hunyuan21 · octree 768</span>
         </div>
         <div class="wz-card" data-engine="hunyuan2mv" onclick="wzPickEngine('hunyuan2mv',this)">
           <h3>Multi-view Hunyuan</h3>
-          <p>Front + Left + Back (or a turntable GIF) → 3D. The occluded sides are
-             real data — accurate in the round. Best for tabletop minis.</p>
+          <p>Front + Left + Back (or a turntable GIF / MP4) → 3D. The occluded sides
+             are real data — accurate in the round. Best for tabletop minis.</p>
           <span class="tag">hunyuan2mv · 3 views</span>
+        </div>
+        <div class="wz-card" data-engine="triposg" onclick="wzPickEngine('triposg',this)">
+          <h3>TripoSG · max detail</h3>
+          <p>One image → 3D. SDF model with the sharpest watertight geometry —
+             best surface detail for minis. Single image (no multi-view).</p>
+          <span class="tag">triposg · SDF · sharp</span>
         </div>
       </div>
       <div class="wz-foot">
@@ -944,16 +950,19 @@ function wzReset(){
   document.getElementById('wz-next1').disabled=true;
   document.getElementById('wz-concept-prev').style.display='none';
   document.getElementById('wz-concept-actions').style.display='none';
-  document.querySelectorAll('.wz-drop img').forEach(i=>i.remove());
+  document.querySelectorAll('.wz-drop img,.wz-drop video').forEach(i=>i.remove());
   wzGoto(1);
 }
+// Single-image engines (vs the multi-view one). triposg + hunyuan21 both take
+// one image; only hunyuan2mv uses the 3-view / GIF / MP4 panel.
+function wzIsSingle(){ return WZ.engine !== 'hunyuan2mv'; }
 function wzGoto(s){
   WZ.screen=s;
   document.querySelectorAll('.wz-screen').forEach(el=>el.classList.toggle('on', +el.dataset.screen===s));
   document.querySelectorAll('.wz-step').forEach(el=>el.classList.toggle('on', +el.dataset.s<=s));
   // screen 2 shows single vs multi panel
   if(s===2){
-    const single = WZ.engine==='hunyuan21';
+    const single = wzIsSingle();
     document.getElementById('wz-single').style.display = single?'block':'none';
     document.getElementById('wz-multi').style.display  = single?'none':'block';
   }
@@ -1031,8 +1040,10 @@ async function wzGenConcept(){
 }
 function wzContinueConcept(){ if(!WZ.conceptPath){ toast('Generate an image first','err'); return; } wzGoto(3); }
 
+const WZ_ENGINE_LABEL = {hunyuan21:'Single-view Hunyuan',
+  hunyuan2mv:'Multi-view Hunyuan', triposg:'TripoSG · max detail'};
 function wzBuildSummary(){
-  const single = WZ.engine==='hunyuan21';
+  const single = wzIsSingle();
   const kind = single ? document.getElementById('wz-kind').value
                       : document.getElementById('wz-kind2').value;
   let inp;
@@ -1042,13 +1053,13 @@ function wzBuildSummary(){
   else { inp = WZ.mvmode==='gif' ? (WZ.mv.gif?'turntable GIF':'—')
     : `front/left/back (${['front','left','back'].filter(v=>WZ.mv[v]).length}/3)`; }
   document.getElementById('wz-summary').innerHTML =
-    `<div>Engine: <b>${single?'Single-view Hunyuan':'Multi-view Hunyuan'}</b></div>`
+    `<div>Engine: <b>${WZ_ENGINE_LABEL[WZ.engine]||WZ.engine}</b></div>`
     +`<div>Input: <b>${inp}</b></div>`
     +`<div>Kind: <b>${kind}</b> · Output at statue scale (downsize in slicer)</div>`
     +`<div class="wz-hint">Validated against Bambu + PrusaSlicer before it's marked done.</div>`;
 }
 async function wzStart(){
-  const single = WZ.engine==='hunyuan21';
+  const single = wzIsSingle();
   let body;
   if(single){
     const kind=document.getElementById('wz-kind').value;
@@ -1056,10 +1067,10 @@ async function wzStart(){
     // Use whatever input exists — an uploaded image wins regardless of which
     // tab is active; otherwise fall back to a prompt-generated concept.
     if(WZ.single){
-      body={engine:'hunyuan21',kind,printer,prompt:'uploaded subject',
+      body={engine:WZ.engine,kind,printer,prompt:'uploaded subject',
         concept_image_data_url:WZ.single};
     } else if(WZ.conceptPath){
-      body={engine:'hunyuan21',kind,printer,
+      body={engine:WZ.engine,kind,printer,
         prompt:(document.getElementById('wz-prompt').value.trim()||'concept'),
         input_image_path:WZ.conceptPath};
     } else {
