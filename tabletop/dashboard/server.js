@@ -63,12 +63,12 @@ function getGPU() {
 }
 
 // ── PROCESS DETECTION + log-based substage tracking ─────────────────────────
-// Stage map (6 substages, in pipeline order):
-//   concept    — RealVisXL/DreamShaper/FLUX inferring concept image
-//   bg_removal — rembg cutting background to white
-//   multiview  — Zero123++ generating 4 views from 1 concept
-//   mesh       — Hunyuan3D building 3D mesh from views
-//   blender    — Blender cleanup (loose parts, voxel remesh, baseplate trim)
+// 5 real stages, in pipeline order:
+//   concept    — concept image (Z-Image/FLUX/RealVis) or using an uploaded one
+//   bg_removal — rembg cutting background to a clean alpha
+//   mesh       — Hunyuan3D 2.1 / 2mv shape generation (load → diffuse → decode)
+//   finish     — sharp finish (pymeshfix) / gauntlet / Blender cleanup + detail
+//   validate   — slicer validation (Bambu/Prusa) → STL
 //   done       — finished
 let _stageCache = { running: false, stage: null, substep: '' };
 
@@ -86,87 +86,70 @@ function _readLogTail(maxBytes = 4096) {
 }
 
 function _deriveSubstage(procRunning, cmdLines, logTail) {
-  // Process gives the gross signal; log tail gives the fine-grained substage.
-  const hasHy3d   = cmdLines.includes('hy3d_infer.py');
-  const hasZ123   = cmdLines.includes('_zero123_infer.py');
-  const hasConcept= cmdLines.includes('_concept_infer.py');
-  const hasOrch   = cmdLines.includes('orchestrate.py');
-  if (!hasOrch && !hasHy3d && !hasZ123 && !hasConcept) {
+  // Process list gives the gross signal; the run-log tail gives the substage.
+  const hasHy     = /_hunyuan(21|2mv)_infer\.py|hy3d_infer\.py/i.test(cmdLines);
+  const hasConcept= /_concept_infer\.py/i.test(cmdLines);
+  const hasFinish = /finish_mini\.py|mesh_gauntlet\.py|detail_enhance\.py/i.test(cmdLines);
+  const hasValid  = /slicer_validate\.py/i.test(cmdLines);
+  const hasOrch   = /orchestrate\.py/i.test(cmdLines);
+  if (!hasOrch && !hasHy && !hasConcept && !hasFinish && !hasValid) {
     return { running: false, stage: null, substep: '' };
   }
-  // Last few log lines reveal the active substep
-  const lines = logTail.split(/\r?\n/).filter(Boolean);
-  const last = lines.slice(-10).join('\n').toLowerCase();
-  // Order matters — later stages override earlier markers in the same log
-  if (last.includes('[4/4]') || last.includes('=== done')) {
-    return { running: false, stage: 'done', substep: 'pipeline complete' };
+  const lines = (logTail || '').split(/\r?\n/).filter(Boolean);
+  const last  = lines.slice(-12).join('\n').toLowerCase();
+
+  // Order matters — latest stage wins.
+  if (last.includes('=== done')) {
+    return { running: false, stage: 'done', substep: 'complete' };
   }
-  if (hasHy3d || /\[2\/4\].*mesh|\[hy3d_infer\]/i.test(logTail)) {
-    let sub = 'HY3D inference';
-    if (/loading.*pipeline|loading.*weights/i.test(last)) sub = 'loading HY3D model weights';
-    else if (/preprocessing image/i.test(last)) sub = 'preprocessing input image(s)';
-    else if (/shape generation/i.test(last)) sub = 'running shape diffusion (50 steps)';
-    else if (/mesh saved|export/i.test(last)) sub = 'saving mesh GLB';
+  // 5) validate
+  if (hasValid || /\[4b?\/4\]|\[3\/3\]|slicer validation|slicer_validate/.test(last)) {
+    return { running: true, stage: 'validate',
+             substep: 'slicing to verify it prints (Bambu / PrusaSlicer)' };
+  }
+  // 4) finish — sharp finish / gauntlet / blender cleanup / detail enhance
+  if (hasFinish ||
+      /\[3b?\/4\]|\[2b\/4\]|\[2\/3\]|sharp (mini )?finish|finish_mini|pymeshfix|gauntlet|blender cleanup|detail enhanc|pymeshlab/.test(last)) {
+    let sub = 'repairing + sealing the mesh';
+    if (/pymeshfix|sharp/.test(last))        sub = 'pymeshfix repair (lossless — keeps detail)';
+    else if (/gauntlet|voxel/.test(last))    sub = 'mesh gauntlet (repair + orient + seat)';
+    else if (/detail|unsharp|pymeshlab/.test(last)) sub = 'PyMeshLab detail enhancement';
+    else if (/blender/.test(last))           sub = 'Blender cleanup + STL export';
+    else if (/orient|seat|tweaker/.test(last)) sub = 'auto-orient + seat to bed';
+    return { running: true, stage: 'finish', substep: sub };
+  }
+  // 3) mesh — Hunyuan shape generation (single or multi-view)
+  if (hasHy ||
+      /\[2\/4\] mesh|\[1\/3\] multi-view|\[hunyuan2?1?mv?\]|shape (diffusion|pipeline)|volume decoding|loading shape pipeline|flashvdm|full gpu load|octree/.test(last)) {
+    let sub = 'Hunyuan 3D shape generation';
+    if (/loading shape pipeline|cpu first|loading.*weights|downloading/.test(last))
+      sub = 'loading / downloading Hunyuan model (first run is slow)';
+    else if (/full gpu load/.test(last))  sub = 'loading model onto the GPU';
+    else if (/flashvdm/.test(last))       sub = 'FlashVDM enabled';
+    else if (/preparing image|background/.test(last)) sub = 'preparing input image';
+    else if (/shape diffusion|sampling|steps=/.test(last)) sub = 'diffusion sampling (shape)';
+    else if (/volume decoding|octree/.test(last)) sub = 'volume decode → mesh (octree 768)';
+    else if (/saved/.test(last))          sub = 'saving mesh';
     return { running: true, stage: 'mesh', substep: sub };
   }
-  if (hasZ123 || last.includes('zero123')) {
-    let sub = 'generating multi-view';
-    if (last.includes('loading pipeline'))    sub = 'loading Zero123++ model';
-    else if (last.includes('generating 6'))   sub = 'diffusing 6 views (50 steps)';
-    else if (last.includes('saved'))          sub = 'splitting 2×3 grid into views';
-    return { running: true, stage: 'multiview', substep: sub };
+  // 2) bg removal
+  if (/background removed|removing background|rembg|\[1b\/4\]/.test(last)) {
+    return { running: true, stage: 'bg_removal', substep: 'background removal (rembg / u2net)' };
   }
-  // View-fix phase — high-strength img2img regen on broken side views
-  if (/fixing (front|right|back|left|top) view/i.test(last) ||
-      /view-fix pass regenerated/i.test(last)) {
-    const m = /fixing (front|right|back|left|top) view\s*\[(broken[^\]]*|force)/i.exec(last);
-    const what = m ? `fixing ${m[1]} view (${m[2]})` : 'view-fix img2img (str 0.55)';
-    return { running: true, stage: 'multiview', substep: what };
-  }
-  // MV upscale phase — SDXL Refiner re-synthesizing each side view at 1024
-  if (last.includes('upscale') || last.includes('upscaling') || /upscaled \d+ side/i.test(last)) {
-    return { running: true, stage: 'multiview',
-             substep: 'upscaling views (SDXL Refiner img2img → 1024×1024)' };
-  }
-  if (last.includes('background removed')) {
-    return { running: true, stage: 'multiview', substep: 'about to launch multi-view' };
-  }
-  // Concept refiner phase — SDXL Refiner img2img on the rembg'd concept
-  if (/\[image_refine\]/i.test(last) && /concept|refine|strength/i.test(last)) {
-    let sub = 'refining concept (SDXL Refiner img2img str 0.22)';
-    if (last.includes('sdxl-refiner')) sub = 'SDXL Refiner sharpening concept detail';
-    return { running: true, stage: 'concept', substep: sub };
-  }
-  if (last.includes('rembg') || last.includes('background')) {
-    return { running: true, stage: 'bg_removal', substep: 'running rembg/u2net segmentation' };
-  }
-  // Detail enhance phase — PyMeshLab after Blender
-  if (/\[detail_enhance\]/i.test(last) || /\[3b\/4\]/i.test(last)) {
-    let sub = 'PyMeshLab detail enhancement';
-    if (last.includes('sharpened')) sub = 'PyMeshLab normal-unsharp mask applied';
-    else if (last.includes('smoothed')) sub = 'PyMeshLab edge-preserving smooth applied';
-    return { running: true, stage: 'blender', substep: sub };
-  }
-  if (hasConcept || last.includes('concept_gen') || last.includes('concept_infer')) {
+  // 1) concept
+  if (hasConcept || /\[1\/4\]|concept image|concept_gen|user-provided/.test(last)) {
     let sub = 'generating concept image';
-    if (last.includes('flux_schnell'))     sub = 'FLUX.1-schnell · 4 steps (CPU offload)';
-    else if (last.includes('realvis_v5'))  sub = 'RealVisXL v5 · DPM++ 2M Karras · 35 steps';
-    else if (last.includes('dreamshaper')) sub = 'DreamShaper XL Turbo · 6 steps';
-    else if (last.includes('user-provided'))sub = 'using user-provided image as concept';
+    if (/z[_-]?image/.test(last))      sub = 'Z-Image-Turbo concept (8 steps)';
+    else if (/flux/.test(last))        sub = 'FLUX concept';
+    else if (/realvis/.test(last))     sub = 'RealVisXL concept';
+    else if (/dreamshaper/.test(last)) sub = 'DreamShaper XL Turbo concept';
+    else if (/user-provided|using user/.test(last)) sub = 'using uploaded image';
     return { running: true, stage: 'concept', substep: sub };
   }
-  if (hasOrch && /\[3\/4\].*blender|blender_cleanup/i.test(logTail)) {
-    let sub = 'Blender cleanup';
-    if (last.includes('loose'))         sub = 'removing loose / flat artifacts';
-    else if (last.includes('voxel'))    sub = 'voxel remesh + Taubin smooth';
-    else if (last.includes('baseplate'))sub = 'trimming oversized baseplate';
-    else if (last.includes('manifold')) sub = 'manifold check + hole fill';
-    else if (last.includes('stl_export') || last.includes('-> ') && last.includes('.stl'))
-      sub = 'exporting STL';
-    return { running: true, stage: 'blender', substep: sub };
-  }
-  // Fallback if orchestrate is running but we can't pin it to a substage yet
-  return { running: true, stage: 'concept', substep: 'starting up…' };
+  // Fallback — pin to the most likely current stage from the process list.
+  return { running: true,
+           stage: hasFinish ? 'finish' : hasHy ? 'mesh' : 'concept',
+           substep: 'working…' };
 }
 
 // List running python command lines, cross-platform (Linux workstation = ps).
@@ -271,16 +254,16 @@ function getSTLs() {
 }
 
 // ── TIMING ESTIMATION ────────────────────────────────────────────────────────
-// Per-stage estimated duration in seconds. Tuned for RealVisXL + Zero123++ +
-// HY3D mv + Blender on RTX 5080 / 16 GB.
+// Per-stage estimated duration in seconds (RTX 5090 / 32 GB, octree 768).
+// 'mesh' dominates: model load + diffusion (75 steps) + volume decode.
 const STEP_EST = {
-  concept:    45,    // RealVis ~30s + load
+  concept:    45,    // concept image (instant if uploaded)
   bg_removal: 6,     // rembg/u2net
-  multiview:  90,    // Zero123++ 50 steps + split
-  mesh:       1800,  // HY3D 2.0 mv (octree 512 · 50 steps)
-  blender:    200,   // cleanup + STL export
+  mesh:       360,   // HY3D load + diffuse + octree-768 decode (first run +download)
+  finish:     120,   // pymeshfix / gauntlet / cleanup + detail
+  validate:   60,    // Bambu + PrusaSlicer slice check
 };
-const STAGE_ORDER = ['concept', 'bg_removal', 'multiview', 'mesh', 'blender'];
+const STAGE_ORDER = ['concept', 'bg_removal', 'mesh', 'finish', 'validate'];
 
 function calcTiming(current) {
   if (!current || !current.active) return null;
@@ -311,17 +294,17 @@ function calcTiming(current) {
   if (!substep) {
     if (stage === 'concept')         substep = 'generating concept image…';
     else if (stage === 'bg_removal') substep = 'removing background (rembg/u2net)';
-    else if (stage === 'multiview')  substep = 'generating multi-view (Zero123++)';
     else if (stage === 'mesh') {
-      if (stepElapsed < 300)       substep = 'loading HY3D weights (~5 min)';
-      else if (stepElapsed < 650)  substep = 'CUDA kernel warmup — first step only';
+      if (stepElapsed < 120)       substep = 'loading / downloading Hunyuan model…';
+      else if (stepElapsed < 150)  substep = 'CUDA warmup — first step only';
       else {
-        const inferPct = (stepElapsed - 650) / Math.max(1, stepEst - 650);
-        const estStep  = Math.min(50, Math.max(2, Math.round(inferPct * 49) + 2));
-        substep = `Diffusion sampling ~${estStep} / 50 steps est.`;
+        const inferPct = (stepElapsed - 150) / Math.max(1, stepEst - 150);
+        const estStep  = Math.min(75, Math.max(2, Math.round(inferPct * 73) + 2));
+        substep = `diffusion sampling ~${estStep} / 75 steps`;
       }
     }
-    else if (stage === 'blender')   substep = 'mesh repair + STL export…';
+    else if (stage === 'finish')    substep = 'mesh repair + finish…';
+    else if (stage === 'validate')  substep = 'slicer validation…';
   }
 
   return {

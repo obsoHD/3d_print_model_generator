@@ -184,6 +184,7 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
    Track is at exact circle-center. Done segments fill with accent. */
 .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:0;position:relative;
   margin:14px 0 18px;padding:0 5%}
+.steps.steps-5{grid-template-columns:repeat(5,1fr);padding:0 3%}
 .steps.steps-6{grid-template-columns:repeat(6,1fr);padding:0 2%}
 .steps.steps-9{grid-template-columns:repeat(9,1fr);padding:0 1%}
 
@@ -632,52 +633,32 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
       <div class="pl-prompt" id="pl-prompt"></div>
     </div>
 
-    <!-- 9-step timeline -->
-    <div class="steps steps-9" id="steps">
+    <!-- 5-stage timeline (matches the actual neural pipeline) -->
+    <div class="steps steps-5" id="steps">
       <div class="step" data-step="0">
         <div class="step-circle">1</div>
         <div class="step-label">Concept</div>
-        <div class="step-sub" data-sub="0">~30s</div>
+        <div class="step-sub" data-sub="0">image</div>
       </div>
       <div class="step" data-step="1">
         <div class="step-circle">2</div>
-        <div class="step-label">Refine</div>
-        <div class="step-sub" data-sub="1">~18s</div>
+        <div class="step-label">Prep</div>
+        <div class="step-sub" data-sub="1">bg cut</div>
       </div>
       <div class="step" data-step="2">
         <div class="step-circle">3</div>
-        <div class="step-label">BG Cut</div>
-        <div class="step-sub" data-sub="2">~6s</div>
+        <div class="step-label">3D Mesh</div>
+        <div class="step-sub" data-sub="2">Hunyuan</div>
       </div>
       <div class="step" data-step="3">
         <div class="step-circle">4</div>
-        <div class="step-label">4 Views</div>
-        <div class="step-sub" data-sub="3">~40s</div>
+        <div class="step-label">Finish</div>
+        <div class="step-sub" data-sub="3">repair</div>
       </div>
       <div class="step" data-step="4">
-        <div class="step-circle">5</div>
-        <div class="step-label">Upscale</div>
-        <div class="step-sub" data-sub="4">~60s</div>
-      </div>
-      <div class="step" data-step="5">
-        <div class="step-circle">6</div>
-        <div class="step-label">Fix + Top</div>
-        <div class="step-sub" data-sub="5">~60s</div>
-      </div>
-      <div class="step" data-step="6">
-        <div class="step-circle">7</div>
-        <div class="step-label">3D Mesh</div>
-        <div class="step-sub" data-sub="6">~28 min</div>
-      </div>
-      <div class="step" data-step="7">
-        <div class="step-circle">8</div>
-        <div class="step-label">Cleanup</div>
-        <div class="step-sub" data-sub="7">~3 min</div>
-      </div>
-      <div class="step" data-step="8">
         <div class="step-circle"><svg class="ico" style="stroke-width:3"><use href="#i-check"/></svg></div>
-        <div class="step-label">STL Done</div>
-        <div class="step-sub" data-sub="8">ready</div>
+        <div class="step-label">STL</div>
+        <div class="step-sub" data-sub="4">validate</div>
       </div>
     </div>
 
@@ -1571,27 +1552,21 @@ function updGpu(g){
 // mesh: 6
 // blender: 7 (Cleanup), 8 also when detail_enhance shows
 // done: marks 8 complete
-const STEP_EST  = ['~30s','~18s','~6s','~40s','~60s','~60s','~28 min','~3 min','ready'];
+// 5 real stages: Concept · Prep · 3D Mesh · Finish · STL
+const STEP_EST  = ['~30s','~6s','~3 min','~60s','validate'];
 
 function mapStageSubstepToStep(stage, substep){
-  const s = (substep || '').toLowerCase();
-  if(stage === 'concept'){
-    if(s.includes('refiner') || s.includes('refining concept') || s.includes('sharpening')) return 1;
-    return 0;
+  switch(stage){
+    case 'concept':    return 0;
+    case 'bg_removal': return 1;
+    case 'mesh':       return 2;
+    case 'finish':     return 3;
+    case 'blender':    return 3;   // legacy alias
+    case 'multiview':  return 2;   // legacy alias → folds into mesh
+    case 'validate':   return 4;
+    case 'done':       return 4;
+    default:           return -1;
   }
-  if(stage === 'bg_removal') return 2;
-  if(stage === 'multiview'){
-    if(s.includes('upscaling') || s.includes('upscale')) return 4;
-    if(s.includes('fixing') || s.includes('view-fix') || s.includes('top view') || s.includes('synthesized')) return 5;
-    return 3;
-  }
-  if(stage === 'mesh') return 6;
-  if(stage === 'blender'){
-    if(s.includes('pymeshlab') || s.includes('detail') || s.includes('unsharp')) return 8;
-    return 7;
-  }
-  if(stage === 'done') return 8;
-  return -1;
 }
 
 function setStepState(idx, state /* idle|active|done */){
@@ -1750,7 +1725,7 @@ function updPipeline(d){
     promptWrap.style.display = 'none';
     plIdle.style.display = '';
     progBlock.style.display = 'none';
-    [0,1,2,3].forEach(i => { setStepState(i,'idle'); setStepSub(i, STEP_EST[i]); });
+    [0,1,2,3,4].forEach(i => { setStepState(i,'idle'); setStepSub(i, STEP_EST[i]); });
     plStat.className = 'pl-status';
     plStat.innerHTML = '<span class="live-dot off"></span><span>No active run</span>';
     dot.classList.add('off'); liveV.textContent = 'Idle';
@@ -1781,28 +1756,26 @@ function updPipeline(d){
       + (cur.step || 0) + '/4</span>';
   }
 
-  // Mark steps done/active across the 9-step timeline
+  // Mark steps done/active across the 5-stage timeline
+  // (0 Concept · 1 Prep · 2 Mesh · 3 Finish · 4 STL)
   let activeStep = cur.active
     ? mapStageSubstepToStep(cur.active_stage, cur.timing?.substep || d.proc?.substep || '')
     : -1;
-  // Compute which steps are definitively done from observable artifacts
+  // Which steps are definitively done from observable artifacts
   let lastDoneStep = -1;
-  if(cur.step === 4)                lastDoneStep = 8;     // STL exported → all done
-  else if(cur.glb_file)             lastDoneStep = 6;     // mesh exists (3D done)
-  else if(cur.concept_views?.top)   lastDoneStep = 5;     // top synthesized
-  else if(cur.has_mv)               lastDoneStep = 3;     // basic mv done (sides exist)
-  else if(cur.concept_file)         lastDoneStep = 2;     // concept + bg done
+  if(cur.step === 4)            lastDoneStep = 4;     // STL exported → all done
+  else if(cur.glb_file)         lastDoneStep = 2;     // mesh exists → Concept+Prep+Mesh done
+  else if(cur.concept_file)     lastDoneStep = 1;     // concept image + bg prep done
 
   if(activeStep > 0) lastDoneStep = Math.max(lastDoneStep, activeStep - 1);
 
-  for(let i = 0; i < 9; i++){
+  for(let i = 0; i < 5; i++){
     if(i === activeStep)         setStepState(i, 'active');
     else if(i <= lastDoneStep)   setStepState(i, 'done');
     else                         setStepState(i, 'idle');
   }
   // Drive the single horizontal progress track. Fill ratio = done/(N-1).
-  // Use activeStep+0.5 if a step is mid-flight so the line shows partial progress.
-  const N = 9;
+  const N = 5;
   let donePct = 0;
   if(lastDoneStep >= 0)         donePct = lastDoneStep / (N - 1);
   if(activeStep > lastDoneStep) donePct = Math.max(donePct, (activeStep - 0.5) / (N - 1));
@@ -1811,15 +1784,10 @@ function updPipeline(d){
 
   // Sub-labels — short status under each circle
   setStepSub(0, cur.concept_file ? '✓' : (activeStep===0 ? 'gen…' : STEP_EST[0]));
-  setStepSub(1, (lastDoneStep>=1) ? '✓' : (activeStep===1 ? 'refiner…' : STEP_EST[1]));
-  setStepSub(2, (lastDoneStep>=2 || cur.has_mv) ? '✓' : (activeStep===2 ? 'rembg…' : STEP_EST[2]));
-  setStepSub(3, cur.has_mv ? '4 views ✓' : (activeStep===3 ? 'Z123…' : STEP_EST[3]));
-  setStepSub(4, (lastDoneStep>=4) ? '✓' : (activeStep===4 ? '1024…' : STEP_EST[4]));
-  setStepSub(5, cur.concept_views?.top ? '✓' : (activeStep===5 ? 'fixing…' : STEP_EST[5]));
-  setStepSub(6, cur.glb_file ? 'mesh ✓' : (activeStep===6 ? 'inferring…' : STEP_EST[6]));
-  setStepSub(7, (cur.step>=3 && !cur.active) ? 'cleaned ✓' :
-                (activeStep===7 ? 'cleaning…' : STEP_EST[7]));
-  setStepSub(8, cur.step===4 ? 'ready' : STEP_EST[8]);
+  setStepSub(1, (lastDoneStep>=1) ? '✓' : (activeStep===1 ? 'rembg…' : STEP_EST[1]));
+  setStepSub(2, cur.glb_file ? 'mesh ✓' : (activeStep===2 ? 'inferring…' : STEP_EST[2]));
+  setStepSub(3, (cur.step===4) ? '✓' : (activeStep===3 ? 'finishing…' : STEP_EST[3]));
+  setStepSub(4, cur.step===4 ? 'ready' : (activeStep===4 ? 'slicing…' : STEP_EST[4]));
 
   // Progress block
   const t = cur.timing;
