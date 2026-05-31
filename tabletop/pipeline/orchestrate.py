@@ -45,7 +45,7 @@ for d in (OUT_CONCEPTS, OUT_MESHES, OUT_STL, OUT_PREVIEWS):
 #   hunyuan21  -> Hunyuan3D 2.1 (best neural — minis / organic)
 #   triposg/pixal3d/hunyuan/sparc3d -> other neural engines
 ENGINES = ("sparc3d", "hunyuan", "hunyuan21", "hunyuan2mv", "pixal3d",
-           "triposg", "parametric", "auto", "both")
+           "triposg", "craftsman", "parametric", "auto", "both")
 
 # Structural keywords that route engine=auto -> parametric CAD
 PARAMETRIC_KEYWORDS = ("tower", "wall", "crate", "box", "tile", "floor",
@@ -133,6 +133,13 @@ def check_models() -> dict:
         "ready": tg_dir.exists()
                  and (tg_dir / "triposg" / "inference_utils.py").exists(),
         "path": str(tg_dir),
+    }
+    # CraftsMan3D (coarse 3D diffusion + normal-based geometry refiner)
+    cm_dir = TABLETOP_ROOT / "CraftsMan3D"
+    report["engines"]["craftsman"] = {
+        "ready": cm_dir.exists()
+                 and (cm_dir / "craftsman" / "__init__.py").exists(),
+        "path": str(cm_dir),
     }
     # LoRAs
     lora_dir = models_dir / "loras"
@@ -330,7 +337,7 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
     #   single               — skip MV entirely, HY3D 2.1 single-view mode
     mv_paths: dict[str, str] | None = None
     mv_engine = os.environ.get("MV_ENGINE", "zero123").lower()
-    if engine in ("pixal3d", "triposg", "hunyuan21"):
+    if engine in ("pixal3d", "triposg", "craftsman", "hunyuan21"):
         print(f"  [1b/4] engine={engine} - skipping multi-view (direct image-to-3D)")
     elif mv_engine == "single":
         print("  [1b/4] MV_ENGINE=single — skipping multi-view expansion")
@@ -383,6 +390,15 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             seed=seed or 42,
             steps=50,
             faces=400_000,        # decimate from ~2-3M to a slicer-friendly count
+        )
+        print(f"        -> {mesh_glb.name}")
+    if engine == "craftsman":
+        import craftsman_engine
+        print("  [2/4] mesh generation (CraftsMan3D, coarse 3D + normal refiner)...")
+        craftsman_engine.generate(
+            image_path=str(concept_png),
+            out_path=str(mesh_glb),
+            seed=seed or 42,
         )
         print(f"        -> {mesh_glb.name}")
     if engine == "hunyuan21":
@@ -496,7 +512,7 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
         # Blender voxel-remesh solidify. Output is a single watertight solid
         # ready for direct slicer ingest — no Blender cleanup heroics needed.
         repaired_glb = OUT_MESHES / f"{run_id}.gauntlet.glb"
-        if engine in ("triposg", "pixal3d", "hunyuan21", "hunyuan", "both") and mesh_glb.exists():
+        if engine in ("triposg", "craftsman", "pixal3d", "hunyuan21", "hunyuan", "both") and mesh_glb.exists():
             try:
                 import subprocess
                 gauntlet_py = HERE / "mesh_gauntlet.py"

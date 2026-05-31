@@ -42,6 +42,13 @@ timm            # required: hy3dshape denoiser (moe_layers) imports timm ViT blo
 peft            # TripoSG
 jaxtyping       # TripoSG (typing.py)
 typeguard       # TripoSG (jaxtyping runtime checks)
+# CraftsMan3D extras (its diffusers/transformers pins are OLDER than ours, so we
+# do NOT pin them — keep our newer versions for Hunyuan and hope CraftsMan is
+# forward-compatible). torch-cluster is a CUDA source build (see Dockerfile).
+pytorch-lightning
+PyMCubes
+plyfile
+joblib
 
 # --- image / background removal ---
 pillow

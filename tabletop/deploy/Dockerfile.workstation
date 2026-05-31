@@ -57,6 +57,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     FORCE_CUDA=1 CUDA_HOME=/usr/local/cuda \
     python -m pip install --no-build-isolation diso==0.1.4
 
+# torch-cluster (CraftsMan3D point-sampling): PyG CUDA extension with no prebuilt
+# wheel for torch 2.8 cu128, so build from source — also torch-only, also before
+# requirements so it caches independently. FORCE_CUDA=1 for the no-GPU build.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    FORCE_CUDA=1 CUDA_HOME=/usr/local/cuda \
+    python -m pip install --no-build-isolation torch-cluster
+
 # --- curated active-engine deps (changes here no longer recompile diso) ---
 COPY tabletop/deploy/requirements.linux.txt /tmp/requirements.linux.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -73,6 +80,12 @@ RUN git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1.git /ap
 #     VAST-AI/TripoSG + briaai/RMBG-1.4 weights auto-download at first run to
 #     /data (persisted). Uses diso (already built above) for the DMC decoder. ---
 RUN git clone --depth 1 https://github.com/VAST-AI-Research/TripoSG.git /app/tabletop/TripoSG
+
+# --- CraftsMan3D engine (coarse 3D diffusion + normal-based geometry refiner;
+#     max surface detail). Code only — imported via sys.path (NOT pip-installed,
+#     to keep our newer diffusers/transformers). craftsman3d/craftsman-DoraVAE
+#     weights auto-download at first run to /data. ---
+RUN git clone --depth 1 https://github.com/HKUST-SAIL/CraftsMan3D.git /app/tabletop/CraftsMan3D
 
 # pymeshlab's Qt plugins (used by hy3dshape postprocessors) link libOpenGL.so.0
 # et al. Install the GL runtime libs as a late layer so the heavy steps above

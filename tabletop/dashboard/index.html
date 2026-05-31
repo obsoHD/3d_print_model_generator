@@ -847,6 +847,12 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
              best surface detail for minis. Single image (no multi-view).</p>
           <span class="tag">triposg · SDF · sharp</span>
         </div>
+        <div class="wz-card" data-engine="craftsman" onclick="wzPickEngine('craftsman',this)">
+          <h3>CraftsMan3D · refined</h3>
+          <p>One image → coarse 3D → <b>normal-based geometry refiner</b>. Carves
+             in fine surface detail (faces, folds, cracks) the others smooth over.</p>
+          <span class="tag">craftsman · coarse + refine</span>
+        </div>
       </div>
       <div class="wz-foot">
         <span></span>
@@ -1041,7 +1047,8 @@ async function wzGenConcept(){
 function wzContinueConcept(){ if(!WZ.conceptPath){ toast('Generate an image first','err'); return; } wzGoto(3); }
 
 const WZ_ENGINE_LABEL = {hunyuan21:'Single-view Hunyuan',
-  hunyuan2mv:'Multi-view Hunyuan', triposg:'TripoSG · max detail'};
+  hunyuan2mv:'Multi-view Hunyuan', triposg:'TripoSG · max detail',
+  craftsman:'CraftsMan3D · refined'};
 function wzBuildSummary(){
   const single = wzIsSingle();
   const kind = single ? document.getElementById('wz-kind').value
