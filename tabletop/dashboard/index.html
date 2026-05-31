@@ -866,6 +866,18 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
              in fine surface detail (faces, folds, cracks) the others smooth over.</p>
           <span class="tag">craftsman · coarse + refine</span>
         </div>
+        <div class="wz-card" data-engine="hi3dgen" onclick="wzPickEngine('hi3dgen',this)">
+          <h3>Hi3DGen · normal-bridging</h3>
+          <p>One image → high-detail <b>normal map</b> → normal-guided geometry.
+             Best geometric fidelity in studies — the detail specialist.</p>
+          <span class="tag">hi3dgen · normals</span>
+        </div>
+        <div class="wz-card" data-engine="trellis" onclick="wzPickEngine('trellis',this)">
+          <h3>TRELLIS.2 · 4B</h3>
+          <p>One image → 3D. The largest open model (4B, O-Voxel, 1536³). Highest
+             capacity / robustness; heaviest to run.</p>
+          <span class="tag">trellis.2 · 4B</span>
+        </div>
       </div>
       <div class="wz-foot">
         <span></span>
@@ -1061,7 +1073,8 @@ function wzContinueConcept(){ if(!WZ.conceptPath){ toast('Generate an image firs
 
 const WZ_ENGINE_LABEL = {hunyuan21:'Single-view Hunyuan',
   hunyuan2mv:'Multi-view Hunyuan', triposg:'TripoSG · max detail',
-  craftsman:'CraftsMan3D · refined'};
+  craftsman:'CraftsMan3D · refined', hi3dgen:'Hi3DGen · normal-bridging',
+  trellis:'TRELLIS.2 · 4B'};
 function wzBuildSummary(){
   const single = wzIsSingle();
   const kind = single ? document.getElementById('wz-kind').value

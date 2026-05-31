@@ -18,6 +18,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TORCH_CUDA_ARCH_LIST="12.0" \
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     HF_HOME=/data/hf \
+    ATTN_BACKEND=xformers \
+    SPCONV_ALGO=native \
     NODE_MAJOR=20
 
 # --- system deps (python, node, build chain, mesh/gl libs) ---
@@ -86,6 +88,28 @@ RUN git clone --depth 1 https://github.com/VAST-AI-Research/TripoSG.git /app/tab
 #     to keep our newer diffusers/transformers). craftsman3d/craftsman-DoraVAE
 #     weights auto-download at first run to /data. ---
 RUN git clone --depth 1 https://github.com/HKUST-SAIL/CraftsMan3D.git /app/tabletop/CraftsMan3D
+
+# --- TRELLIS.2 (Microsoft, 4B) + Hi3DGen (Stable3DGen) — both TRELLIS-based, so
+#     they share ONE heavy CUDA backend. Clone both; weights auto-download. ---
+RUN git clone --depth 1 https://github.com/microsoft/TRELLIS.2.git /app/tabletop/TRELLIS \
+ && git clone --depth 1 https://github.com/Stable-X/Stable3DGen.git /app/tabletop/Stable3DGen
+
+# Shared TRELLIS CUDA stack. This is the hardest install on Blackwell/torch2.8 —
+# each piece is wrapped non-fatal (|| true) so a failure leaves the OTHER engines
+# (Hunyuan/TripoSG/CraftsMan) working while we iterate these. We use xformers
+# (ATTN_BACKEND=xformers, set in ENV) instead of flash-attn to avoid that build.
+RUN --mount=type=cache,target=/root/.cache/pip set -x; \
+    python -m pip install xformers --index-url https://download.pytorch.org/whl/cu128 || \
+    python -m pip install xformers || true; \
+    python -m pip install spconv-cu126 || python -m pip install spconv-cu120 || true; \
+    python -m pip install open3d easydict igraph utils3d || true; \
+    FORCE_CUDA=1 CUDA_HOME=/usr/local/cuda python -m pip install --no-build-isolation \
+        git+https://github.com/NVlabs/nvdiffrast.git || true; \
+    FORCE_CUDA=1 CUDA_HOME=/usr/local/cuda python -m pip install --no-build-isolation \
+        git+https://github.com/JeffreyXiang/diffoctreerast.git || true; \
+    FORCE_CUDA=1 CUDA_HOME=/usr/local/cuda python -m pip install --no-build-isolation \
+        kaolin -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.8.0_cu128.html || \
+    python -m pip install kaolin || true
 
 # pymeshlab's Qt plugins (used by hy3dshape postprocessors) link libOpenGL.so.0
 # et al. Install the GL runtime libs as a late layer so the heavy steps above

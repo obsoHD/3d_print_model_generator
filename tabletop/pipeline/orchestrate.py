@@ -45,7 +45,8 @@ for d in (OUT_CONCEPTS, OUT_MESHES, OUT_STL, OUT_PREVIEWS):
 #   hunyuan21  -> Hunyuan3D 2.1 (best neural — minis / organic)
 #   triposg/pixal3d/hunyuan/sparc3d -> other neural engines
 ENGINES = ("sparc3d", "hunyuan", "hunyuan21", "hunyuan2mv", "pixal3d",
-           "triposg", "craftsman", "parametric", "auto", "both")
+           "triposg", "craftsman", "trellis", "hi3dgen", "parametric",
+           "auto", "both")
 
 # Structural keywords that route engine=auto -> parametric CAD
 PARAMETRIC_KEYWORDS = ("tower", "wall", "crate", "box", "tile", "floor",
@@ -140,6 +141,18 @@ def check_models() -> dict:
         "ready": cm_dir.exists()
                  and (cm_dir / "craftsman" / "__init__.py").exists(),
         "path": str(cm_dir),
+    }
+    # TRELLIS.2 (Microsoft, 4B O-Voxel — largest open model)
+    tr_dir = TABLETOP_ROOT / "TRELLIS"
+    report["engines"]["trellis"] = {
+        "ready": tr_dir.exists() and (tr_dir / "trellis" / "__init__.py").exists(),
+        "path": str(tr_dir),
+    }
+    # Hi3DGen (Stable3DGen — normal-bridging, best geometric fidelity)
+    h3_dir = TABLETOP_ROOT / "Stable3DGen"
+    report["engines"]["hi3dgen"] = {
+        "ready": h3_dir.exists() and (h3_dir / "trellis" / "__init__.py").exists(),
+        "path": str(h3_dir),
     }
     # LoRAs
     lora_dir = models_dir / "loras"
@@ -337,7 +350,7 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
     #   single               — skip MV entirely, HY3D 2.1 single-view mode
     mv_paths: dict[str, str] | None = None
     mv_engine = os.environ.get("MV_ENGINE", "zero123").lower()
-    if engine in ("pixal3d", "triposg", "craftsman", "hunyuan21"):
+    if engine in ("pixal3d", "triposg", "craftsman", "trellis", "hi3dgen", "hunyuan21"):
         print(f"  [1b/4] engine={engine} - skipping multi-view (direct image-to-3D)")
     elif mv_engine == "single":
         print("  [1b/4] MV_ENGINE=single — skipping multi-view expansion")
@@ -400,6 +413,18 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             out_path=str(mesh_glb),
             seed=seed or 42,
         )
+        print(f"        -> {mesh_glb.name}")
+    if engine == "trellis":
+        import trellis_engine
+        print("  [2/4] mesh generation (TRELLIS.2, 4B O-Voxel)...")
+        trellis_engine.generate(
+            image_path=str(concept_png), out_path=str(mesh_glb), seed=seed or 42)
+        print(f"        -> {mesh_glb.name}")
+    if engine == "hi3dgen":
+        import hi3dgen_engine
+        print("  [2/4] mesh generation (Hi3DGen, normal-bridging)...")
+        hi3dgen_engine.generate(
+            image_path=str(concept_png), out_path=str(mesh_glb), seed=seed or 42)
         print(f"        -> {mesh_glb.name}")
     if engine == "hunyuan21":
         import hunyuan21_engine
@@ -512,7 +537,7 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
         # Blender voxel-remesh solidify. Output is a single watertight solid
         # ready for direct slicer ingest — no Blender cleanup heroics needed.
         repaired_glb = OUT_MESHES / f"{run_id}.gauntlet.glb"
-        if engine in ("triposg", "craftsman", "pixal3d", "hunyuan21", "hunyuan", "both") and mesh_glb.exists():
+        if engine in ("triposg", "craftsman", "trellis", "hi3dgen", "pixal3d", "hunyuan21", "hunyuan", "both") and mesh_glb.exists():
             try:
                 import subprocess
                 gauntlet_py = HERE / "mesh_gauntlet.py"

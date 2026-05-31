@@ -22,6 +22,9 @@ done
 export GEN3D_MODELS_DIR="${GEN3D_MODELS_DIR:-$DATA/models}"
 export GEN3D_OUTPUTS_DIR="${GEN3D_OUTPUTS_DIR:-$DATA/outputs}"
 export HF_HOME="${HF_HOME:-$DATA/hf}"
+# torch.hub cache (Hi3DGen's StableNormal estimator) -> persist on /data.
+export TORCH_HOME="${TORCH_HOME:-$DATA/torch}"
+mkdir -p "$TORCH_HOME"
 
 # Some libs cache models under $HOME, NOT HF_HOME — which means they re-download
 # every rebuild. Symlink those onto /data so they persist:
@@ -51,6 +54,28 @@ export DISPLAY=:99
 # place. Informational only (never blocks). Shown in `docker logs` + persisted.
 echo "[entrypoint] running startup diagnostics..."
 python "$APP/pipeline/diagnostics.py" 2>&1 | tee "$DATA/outputs/logs/startup_diagnostics.log" || true
+
+# Pre-fetch the big 3D model weights in the BACKGROUND at boot so they're ready
+# before the first run (TRELLIS.2 + Hi3DGen geometry). Non-blocking + non-fatal;
+# progress in /data/outputs/logs/prefetch.log. The dashboard starts immediately.
+echo "[entrypoint] prefetching TRELLIS.2 + Hi3DGen weights in background..."
+( python - <<'PY' >"$DATA/outputs/logs/prefetch.log" 2>&1
+import os
+os.environ.setdefault("HF_HOME", "/data/hf")
+try:
+    from huggingface_hub import snapshot_download
+    for repo in ("microsoft/TRELLIS.2-4B", "Stable-X/trellis-normal-v0-1",
+                 "Stable-X/yoso-normal-v1-8-1"):
+        try:
+            print(f"[prefetch] downloading {repo} ...", flush=True)
+            snapshot_download(repo, token=os.environ.get("HF_TOKEN"))
+            print(f"[prefetch] done {repo}", flush=True)
+        except Exception as e:
+            print(f"[prefetch] skip {repo}: {e}", flush=True)
+except Exception as e:
+    print(f"[prefetch] unavailable: {e}", flush=True)
+PY
+) &
 
 cd /app/tabletop/dashboard
 export DASHBOARD_PORT="${DASHBOARD_PORT:-7800}"

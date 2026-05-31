@@ -23,6 +23,8 @@ tabletop/Hunyuan3D-2.1/
 tabletop/Pixal3D/
 tabletop/TripoSG/
 tabletop/CraftsMan3D/
+tabletop/TRELLIS/
+tabletop/Stable3DGen/
 tabletop/MV-Adapter/
 tabletop/outputs/
 *.glb
