@@ -57,17 +57,33 @@ def generate(image_path: str, out_path: str,
            "--steps",  str(steps),
            "--octree-resolution", str(octree_resolution),
            "--seed",   str(seed)]
-    print(f"  [hunyuan21] inference ({steps} steps, octree={octree_resolution}, "
-          f"CPU offload + 192-grid)...", flush=True)
+    print(f"  [hunyuan21] inference ({steps} steps, octree={octree_resolution}; "
+          f"auto full-GPU+FlashVDM on >=24GB, CPU-offload only on <24GB)...",
+          flush=True)
     env = {**os.environ,
-           "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
-    proc = subprocess.run(cmd, capture_output=True, text=True,
-                          cwd=str(LIB_DIR), timeout=timeout_s, env=env)
+           "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+           "PYTHONUNBUFFERED": "1",
+           "HF_HUB_VERBOSITY": "info"}   # show model-download progress live
+    # Stream the child's output LIVE into the run log (don't buffer until the
+    # end) so model download + diffusion steps + decode are visible. Keep a
+    # rolling tail for error reporting.
+    import collections
+    tail = collections.deque(maxlen=80)
+    proc = subprocess.Popen(cmd, cwd=str(LIB_DIR), env=env, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            bufsize=1)
+    try:
+        for raw in proc.stdout:
+            ln = raw.rstrip("\n")
+            print(f"        {ln}", flush=True)
+            tail.append(ln)
+        proc.wait(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        raise RuntimeError(f"Hunyuan3D 2.1 timed out after {timeout_s}s")
     if proc.returncode != 0:
         raise RuntimeError(
-            f"Hunyuan3D 2.1 failed (exit {proc.returncode}).\n"
-            f"stderr tail:\n{proc.stderr[-2000:]}"
-        )
+            f"Hunyuan3D 2.1 failed (exit {proc.returncode}).\n" + "\n".join(tail))
     print(f"  [hunyuan21] mesh saved -> {out.name}", flush=True)
     return str(out)
 
