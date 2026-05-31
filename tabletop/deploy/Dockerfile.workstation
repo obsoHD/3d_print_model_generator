@@ -23,7 +23,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgomp1 curl ca-certificates xvfb \
         blender \
         libgtk-3-0 libwebkit2gtk-4.1-0 \
-
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && git lfs install \
@@ -34,7 +33,9 @@ WORKDIR /app
 
 # --- python: torch (cu128) first, then the curated active-engine deps ---
 COPY tabletop/deploy/requirements.linux.txt /tmp/requirements.linux.txt
-RUN python -m pip install --upgrade pip wheel setuptools \
+# NOTE: do NOT upgrade the Debian-managed pip (no RECORD file → uninstall fails).
+# The system pip is fine; just refresh setuptools/wheel for source builds.
+RUN python -m pip install --upgrade setuptools wheel \
  && python -m pip install torch==2.8.0 torchvision==0.23.0 \
         --index-url https://download.pytorch.org/whl/cu128 \
  && python -m pip install -r /tmp/requirements.linux.txt
