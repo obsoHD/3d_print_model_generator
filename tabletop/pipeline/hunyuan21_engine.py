@@ -30,7 +30,7 @@ def _ready() -> bool:
 def generate(image_path: str, out_path: str,
              seed: int = 42,
              steps: int = 75,
-             octree_resolution: int = 512,
+             octree_resolution: int = 768,
              timeout_s: int = 1800) -> str:
     """Run Hunyuan3D 2.1 shape pipeline. Returns the output GLB path.
 

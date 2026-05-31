@@ -175,7 +175,8 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             out_path=str(mesh_glb),
             front=mv_front, left=mv_left, back=mv_back,
             gif=mv_gif, reverse=mv_reverse,
-            seed=seed or 42, steps=30, octree_resolution=512)
+            seed=seed or 42, steps=int(os.environ.get("HY_STEPS", "50")),
+            octree_resolution=int(os.environ.get("HY_OCTREE", "768")))
         stl_path = Path(out_stl) if out_stl else (OUT_STL / f"{run_id}.stl")
         print("  [2/3] sharp finish (pymeshfix, no resample)...")
         fproc = subprocess.run(
@@ -379,7 +380,7 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             out_path=str(mesh_glb),
             seed=seed or 42,
             steps=int(os.environ.get("HY_STEPS", "75")),     # diffusion refinement
-            octree_resolution=int(os.environ.get("HY_OCTREE", "512")),  # 5090/32GB: 512 (~1.8x faces of 384)
+            octree_resolution=int(os.environ.get("HY_OCTREE", "768")),  # 5090/32GB: 768 (HY_OCTREE=1024 for max)
         )
         print(f"        -> {mesh_glb.name}")
     if engine in ("sparc3d", "both"):

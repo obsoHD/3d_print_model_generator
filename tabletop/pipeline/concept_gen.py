@@ -144,7 +144,9 @@ def _remove_bg(img_path: str) -> None:
 
 
 def generate(prompt: str, out_path: str, kind: str = "terrain",
-             seed: int | None = None, width: int = 1280, height: int = 1280,
+             seed: int | None = None,
+             width: int = int(os.environ.get("CONCEPT_RES", "1280")),
+             height: int = int(os.environ.get("CONCEPT_RES", "1280")),
              steps: int | None = None) -> str:
     """Generate one concept image. Returns the model name actually used."""
     pick = pick_model(kind)

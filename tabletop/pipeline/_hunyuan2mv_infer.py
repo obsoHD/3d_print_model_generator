@@ -26,7 +26,7 @@ def main() -> int:
     ap.add_argument("--subfolder", default="hunyuan3d-dit-v2-mv")
     ap.add_argument("--steps", type=int, default=30)
     ap.add_argument("--seed",  type=int, default=42)
-    ap.add_argument("--octree-resolution", type=int, default=380)
+    ap.add_argument("--octree-resolution", type=int, default=768)
     args = ap.parse_args()
 
     sys.path.insert(0, args.lib)
@@ -42,19 +42,32 @@ def main() -> int:
     pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
         args.model, subfolder=args.subfolder,
         use_safetensors=True, device="cpu")
-    try:
-        pipe.enable_flashvdm(enabled=False)
-    except Exception:
-        pass
-    try:
-        pipe.enable_model_cpu_offload()
-        print("[hunyuan2mv] model CPU offload on", flush=True)
-    except Exception as e:
-        # 2.0 hy3dgen pipeline lacks diffusers' offload; move in place.
-        # NOTE: .to() mutates and returns None — do NOT reassign pipe.
-        print(f"[hunyuan2mv] WARN cpu_offload n/a ({e}); full GPU load", flush=True)
+    # VRAM-aware placement (see _hunyuan21_infer for rationale).
+    total_gb = (torch.cuda.get_device_properties(0).total_memory / 1e9
+                if torch.cuda.is_available() else 0)
+    full_gpu = total_gb >= 24 and os.environ.get("HY_CPU_OFFLOAD", "0") != "1"
+    if full_gpu:
+        # .to() mutates and returns None — do NOT reassign pipe.
         try: pipe.to("cuda")
         except Exception: pass
+        print(f"[hunyuan2mv] full GPU load ({total_gb:.0f} GB) — no offload",
+              flush=True)
+        try:
+            pipe.enable_flashvdm(enabled=True)
+            print("[hunyuan2mv] FlashVDM enabled", flush=True)
+        except Exception as e:
+            print(f"[hunyuan2mv] FlashVDM unavailable ({e})", flush=True)
+    else:
+        try: pipe.enable_flashvdm(enabled=False)
+        except Exception: pass
+        try:
+            pipe.enable_model_cpu_offload()
+            print("[hunyuan2mv] model CPU offload on (small VRAM)", flush=True)
+        except Exception as e:
+            print(f"[hunyuan2mv] WARN cpu_offload n/a ({e}); full GPU load",
+                  flush=True)
+            try: pipe.to("cuda")
+            except Exception: pass
 
     def _load(p):
         return Image.open(p).convert("RGBA")
@@ -67,7 +80,7 @@ def main() -> int:
     mesh = pipe(image=views,
                 num_inference_steps=args.steps,
                 octree_resolution=args.octree_resolution,
-                num_chunks=20000,
+                num_chunks=int(os.environ.get("HY_NUM_CHUNKS", "200000")),
                 generator=gen,
                 output_type="trimesh")[0]
 

@@ -26,8 +26,8 @@ def _ready() -> bool:
 def generate(out_path: str,
              front: str = None, left: str = None, back: str = None,
              gif: str = None, reverse: bool = False,
-             seed: int = 42, steps: int = 30,
-             octree_resolution: int = 512,
+             seed: int = 42, steps: int = 50,
+             octree_resolution: int = 768,
              timeout_s: int = 1800) -> str:
     """Run Hunyuan3D-2mv. Provide either (front,left,back) or a turntable gif."""
     if not _ready():

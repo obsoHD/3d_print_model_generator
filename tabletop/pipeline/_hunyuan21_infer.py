@@ -14,6 +14,7 @@ from pathlib import Path
 
 
 def main() -> int:
+    import os
     ap = argparse.ArgumentParser()
     ap.add_argument("--image",   required=True)
     ap.add_argument("--output",  required=True, help="GLB output path")
@@ -22,12 +23,14 @@ def main() -> int:
                     help="HF repo or local dir for the shape weights")
     ap.add_argument("--steps",   type=int, default=50)
     ap.add_argument("--seed",    type=int, default=42)
-    ap.add_argument("--octree-resolution", type=int, default=256,
-                    help="grid resolution for mesh extraction (256/384/512)")
+    ap.add_argument("--octree-resolution", type=int, default=768,
+                    help="grid resolution for mesh extraction (512/768/1024)")
+    ap.add_argument("--num-chunks", type=int,
+                    default=int(os.environ.get("HY_NUM_CHUNKS", "200000")),
+                    help="points per volume-decode chunk (raise on big VRAM)")
     args = ap.parse_args()
 
     sys.path.insert(0, str(Path(args.lib) / "hy3dshape"))
-    import os
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
     import torch
     from PIL import Image
@@ -42,20 +45,36 @@ def main() -> int:
     # before we'd have a chance to enable_model_cpu_offload. Load to CPU first.
     pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(args.model, device="cpu")
 
-    # NOTE: FlashVDM disabled — conflicts with model_cpu_offload's hooks,
-    # corrupting CUDA state in the VAE volume_decoder ("unknown error").
-    # Use only CPU offload + lower octree resolution for VRAM control.
-
-    # Enable per-stage CPU offload: only the actively-running module
-    # (conditioner -> model -> vae) lives on GPU at a time.
-    try:
-        pipe.enable_model_cpu_offload()
-        print(f"[hunyuan21] enabled model CPU offload (16 GB-friendly)",
-              flush=True)
-    except Exception as e:
-        print(f"[hunyuan21] WARN cpu_offload failed ({e}); falling back to "
-              f"full GPU load", flush=True)
+    # VRAM-aware placement.
+    #  • 24 GB+ card (RTX 5090): load the whole pipeline on GPU — no per-stage
+    #    CPU<->GPU shuffling — and enable FlashVDM (safe without cpu_offload),
+    #    which accelerates the VAE volume decode so high octree (768/1024) is
+    #    practical. This is the quality+speed path.
+    #  • Smaller card (16 GB 5080): fall back to model_cpu_offload with FlashVDM
+    #    OFF (its hooks corrupt CUDA state under offload).
+    total_gb = (torch.cuda.get_device_properties(0).total_memory / 1e9
+                if torch.cuda.is_available() else 0)
+    force_offload = os.environ.get("HY_CPU_OFFLOAD", "0") == "1"
+    full_gpu = total_gb >= 24 and not force_offload
+    if full_gpu:
         pipe.to("cuda")
+        print(f"[hunyuan21] full GPU load ({total_gb:.0f} GB) — no offload",
+              flush=True)
+        try:
+            pipe.enable_flashvdm(enabled=True)
+            print("[hunyuan21] FlashVDM enabled (fast high-octree decode)",
+                  flush=True)
+        except Exception as e:
+            print(f"[hunyuan21] FlashVDM unavailable ({e})", flush=True)
+    else:
+        try:
+            pipe.enable_model_cpu_offload()
+            print(f"[hunyuan21] model CPU offload ({total_gb:.0f} GB, FlashVDM off)",
+                  flush=True)
+        except Exception as e:
+            print(f"[hunyuan21] WARN cpu_offload failed ({e}); full GPU load",
+                  flush=True)
+            pipe.to("cuda")
 
     print(f"[hunyuan21] preparing image: {args.image}", flush=True)
     image = Image.open(args.image).convert("RGBA")
@@ -67,10 +86,15 @@ def main() -> int:
           f"octree={args.octree_resolution}, seed={args.seed}) ...",
           flush=True)
     gen = torch.Generator(device="cuda").manual_seed(args.seed)
-    meshes = pipe(image=image,
-                  num_inference_steps=args.steps,
-                  octree_resolution=args.octree_resolution,
-                  generator=gen)
+    pipe_kwargs = dict(image=image,
+                       num_inference_steps=args.steps,
+                       octree_resolution=args.octree_resolution,
+                       generator=gen)
+    try:
+        meshes = pipe(num_chunks=args.num_chunks, **pipe_kwargs)
+    except TypeError:
+        # older pipeline signature without num_chunks
+        meshes = pipe(**pipe_kwargs)
     mesh = meshes[0]
 
     out = Path(args.output); out.parent.mkdir(parents=True, exist_ok=True)
