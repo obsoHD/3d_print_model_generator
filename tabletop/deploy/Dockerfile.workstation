@@ -41,11 +41,12 @@ RUN git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1.git /ap
  && python -m pip install -e /app/tabletop/Hunyuan3D-2.1/hy3dshape || true \
  && python -m pip install -e /app/tabletop/Hunyuan3D-2/hy3dgen      || true
 
-# --- node deps for the dashboard ---
-COPY tabletop/dashboard/package*.json /app/tabletop/dashboard/
-RUN cd /app/tabletop/dashboard && (npm ci --omit=dev || npm install --omit=dev || true)
+# --- dashboard runs on Node built-ins only (http/fs/path/child_process/os);
+#     no package.json / npm install needed. Node itself is installed above. ---
 
-# --- app code (bind-mounted read-only in compose; COPY is the fallback) ---
+# --- app code baked into the image (NOT bind-mounted: a read-only mount of the
+#     lean GitHub clone would shadow the Hunyuan repos cloned just above).
+#     To update code on the box: git pull && docker compose ... up -d --build ---
 COPY tabletop /app/tabletop
 
 COPY tabletop/deploy/entrypoint.sh /entrypoint.sh

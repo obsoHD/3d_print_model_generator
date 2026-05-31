@@ -1,0 +1,38 @@
+# Keep the Docker build context lean. Mirrors .gitignore — the workstation clone
+# is already lean, but this prevents a catastrophic 296 GB context if anyone builds
+# from a full local tree.
+models/
+**/models/
+*.safetensors
+*.ckpt
+*.pth
+*.pt
+*.bin
+*.onnx
+*.gguf
+*_venv/
+venv/
+.venv/
+__pycache__/
+*.pyc
+tabletop/comfyui/
+tabletop/hunyuan3d/
+tabletop/sparc3d/
+tabletop/Hunyuan3D-2/
+tabletop/Hunyuan3D-2.1/
+tabletop/Pixal3D/
+tabletop/TripoSG/
+tabletop/MV-Adapter/
+tabletop/outputs/
+*.glb
+*.stl
+*.obj
+*.ply
+*.3mf
+*.log
+*.err
+node_modules/
+.git/
+.claude/
+.agents/
+.env

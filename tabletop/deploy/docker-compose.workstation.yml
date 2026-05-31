@@ -26,7 +26,9 @@ services:
     ports:
       - "7800:7800"
     volumes:
-      - ../..:/app:ro                      # code bind-mount, read-only
+      # NOTE: code is baked into the image (COPY in the Dockerfile), NOT bind-mounted —
+      # a read-only mount of the lean GitHub clone would shadow the in-image Hunyuan
+      # clones and node setup. Update code with: git pull && ... up -d --build
       - /opt/gen3d/data:/data              # models + outputs on NVMe (host-side)
     networks: [gen3d-net]
     shm_size: "16gb"
