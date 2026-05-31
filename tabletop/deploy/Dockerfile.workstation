@@ -41,18 +41,18 @@ WORKDIR /app
 RUN python -m pip install torch==2.8.0 torchvision==0.23.0 \
         --index-url https://download.pytorch.org/whl/cu128
 
-# --- curated active-engine deps ---
-COPY tabletop/deploy/requirements.linux.txt /tmp/requirements.linux.txt
-RUN python -m pip install -r /tmp/requirements.linux.txt
-
-# diso (TripoSG DMC): CUDA source build that imports torch at build time, so it
-# MUST skip pip build isolation to see the torch installed above. There's no GPU
-# during `docker build`, so torch.cuda.is_available() is False and diso's setup.py
-# would fall back to a CPU build (missing cuda_runtime.h). FORCE_CUDA=1 makes it
-# use CUDAExtension; CUDA_HOME + the -devel toolkit + TORCH_CUDA_ARCH_LIST=12.0
-# (set above) give nvcc the headers and the sm_120 target.
+# diso (TripoSG DMC): CUDA source build that needs only torch at build time.
+# Build it BEFORE the requirements layer so editing requirements never triggers
+# a diso recompile. No GPU during `docker build` → torch.cuda.is_available() is
+# False and diso's setup.py would fall back to a CPU build (missing
+# cuda_runtime.h); FORCE_CUDA=1 makes it use CUDAExtension, and CUDA_HOME + the
+# -devel toolkit + TORCH_CUDA_ARCH_LIST=12.0 give nvcc the headers + sm_120.
 RUN FORCE_CUDA=1 CUDA_HOME=/usr/local/cuda \
     python -m pip install --no-build-isolation diso==0.1.4
+
+# --- curated active-engine deps (changes here no longer recompile diso) ---
+COPY tabletop/deploy/requirements.linux.txt /tmp/requirements.linux.txt
+RUN python -m pip install -r /tmp/requirements.linux.txt
 
 # --- clone the Hunyuan codebases the engines import (code only; weights -> /data) ---
 #   single-view path uses hy3dshape (2.1 repo); mv path uses hy3dgen (2.0 repo)
