@@ -39,6 +39,9 @@ safetensors
 einops
 omegaconf
 timm            # required: hy3dshape denoiser (moe_layers) imports timm ViT blocks
+peft            # TripoSG
+jaxtyping       # TripoSG (typing.py)
+typeguard       # TripoSG (jaxtyping runtime checks)
 
 # --- image / background removal ---
 pillow
