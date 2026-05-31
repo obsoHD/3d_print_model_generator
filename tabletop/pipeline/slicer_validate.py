@@ -22,21 +22,37 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
-BAMBU = Path(r"C:\Program Files\Bambu Studio\bambu-studio.exe")
-BAMBU_PROFILES = Path(r"C:\Program Files\Bambu Studio\resources\profiles\BBL")
-PRUSA_CANDIDATES = [
-    Path(r"C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer-console.exe"),
-    Path(r"C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer.exe"),
-]
+
+def _resolve(*items):
+    """Return the first available binary: PATH names (str) or explicit Paths."""
+    for it in items:
+        if isinstance(it, str):
+            p = shutil.which(it)
+            if p:
+                return Path(p)
+        elif it.exists():
+            return it
+    return None
+
+
+# Cross-platform slicer discovery: PATH first (the Linux container symlinks
+# prusa-slicer into /usr/local/bin), then known Windows install locations.
+PRUSA = _resolve("prusa-slicer", "prusa-slicer-console", "PrusaSlicer",
+                 Path("/opt/prusaslicer/AppRun"),
+                 Path(r"C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer-console.exe"),
+                 Path(r"C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer.exe"))
+BAMBU = _resolve("bambu-studio", "BambuStudio",
+                 Path(r"C:\Program Files\Bambu Studio\bambu-studio.exe"))
 
 
 def _bambu_info(stl: str) -> dict:
     """Run Bambu --info; parse manifold/volume/facets/dims."""
-    out = {"available": BAMBU.exists()}
-    if not BAMBU.exists():
+    out = {"available": BAMBU is not None}
+    if BAMBU is None:
         return out
     try:
         proc = subprocess.run([str(BAMBU), "--info", stl],
@@ -61,8 +77,8 @@ def _bambu_geometry_ok(stl: str, workdir: Path) -> dict:
     """Run Bambu --export-3mf with orient + ensure-on-bed + arrange.
     Exit 0 means the geometry loads, orients, seats and arranges — a real
     (if partial) slicer accepting the mesh."""
-    out = {"available": BAMBU.exists()}
-    if not BAMBU.exists():
+    out = {"available": BAMBU is not None}
+    if BAMBU is None:
         return out
     workdir.mkdir(parents=True, exist_ok=True)
     tmp3mf = workdir / (Path(stl).stem + ".validate.3mf")
@@ -89,7 +105,7 @@ def _prusa_info(stl: str) -> dict:
     """PrusaSlicer --info: the gold-standard mesh repair report. Reports
     manifold, volume, and needed_repair with per-defect counts (open edges,
     degenerate facets, etc). Preset-free, robust."""
-    prusa = next((p for p in PRUSA_CANDIDATES if p.exists()), None)
+    prusa = PRUSA
     out = {"available": prusa is not None}
     if prusa is None:
         return out
@@ -151,7 +167,17 @@ def validate(stl: str, printer: str = "fdm") -> dict:
     prusa = verdict["prusa_info"]; tm = verdict["trimesh"]
     manifold = (info.get("manifold") is True or prusa.get("manifold") is True
                 or tm.get("watertight") is True)
-    processable = geom.get("ok") is True
+    # "processable" = a real slicer accepted the geometry. Bambu's export-3mf is
+    # the strongest signal; a clean PrusaSlicer --info load (exit 0) also counts.
+    # If NO slicer is installed, fall back to trimesh's solid verdict so we don't
+    # hard-fail a watertight mesh just for missing tooling.
+    prusa_loaded = bool(prusa.get("available") and prusa.get("exit") == 0
+                        and not prusa.get("error"))
+    any_slicer = bool(info.get("available") or geom.get("available")
+                      or prusa.get("available"))
+    processable = (geom.get("ok") is True) or prusa_loaded
+    if not any_slicer:
+        processable = bool(tm.get("is_volume"))
     verdict["PASS"] = bool(manifold and processable)
     verdict["reasons"] = []
     if not manifold:

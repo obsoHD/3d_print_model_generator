@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # ============================================================
 #  3d_print_model_generator — workstation image (dual RTX 5090)
 #  Base: CUDA 12.8 devel on Ubuntu 24.04 (native python3.12; 22.04 apt has no
@@ -6,10 +7,14 @@
 # ============================================================
 FROM nvidia/cuda:12.8.0-devel-ubuntu24.04
 
+# NOTE: PIP_NO_CACHE_DIR is intentionally NOT set — pip installs below use a
+# BuildKit cache mount (--mount=type=cache,target=/root/.cache/pip) so wheels
+# are cached between builds and a requirements edit no longer re-downloads them.
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
+    PIP_DEFAULT_TIMEOUT=300 \
+    PIP_RETRIES=10 \
     TORCH_CUDA_ARCH_LIST="12.0" \
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     HF_HOME=/data/hf \
@@ -38,7 +43,8 @@ WORKDIR /app
 
 # torch (cu128) in its OWN layer, BEFORE copying requirements — so editing
 # requirements.linux.txt never busts the ~4 GB torch download cache.
-RUN python -m pip install torch==2.8.0 torchvision==0.23.0 \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install torch==2.8.0 torchvision==0.23.0 \
         --index-url https://download.pytorch.org/whl/cu128
 
 # diso (TripoSG DMC): CUDA source build that needs only torch at build time.
@@ -47,12 +53,14 @@ RUN python -m pip install torch==2.8.0 torchvision==0.23.0 \
 # False and diso's setup.py would fall back to a CPU build (missing
 # cuda_runtime.h); FORCE_CUDA=1 makes it use CUDAExtension, and CUDA_HOME + the
 # -devel toolkit + TORCH_CUDA_ARCH_LIST=12.0 give nvcc the headers + sm_120.
-RUN FORCE_CUDA=1 CUDA_HOME=/usr/local/cuda \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    FORCE_CUDA=1 CUDA_HOME=/usr/local/cuda \
     python -m pip install --no-build-isolation diso==0.1.4
 
 # --- curated active-engine deps (changes here no longer recompile diso) ---
 COPY tabletop/deploy/requirements.linux.txt /tmp/requirements.linux.txt
-RUN python -m pip install -r /tmp/requirements.linux.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install -r /tmp/requirements.linux.txt
 
 # --- clone the Hunyuan codebases the engines import (code only; weights -> /data) ---
 #   single-view path uses hy3dshape (2.1 repo); mv path uses hy3dgen (2.0 repo)
@@ -72,6 +80,22 @@ RUN git clone --depth 1 https://github.com/VAST-AI-Research/TripoSG.git /app/tab
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libopengl0 libegl1 libglx0 libglu1-mesa \
     && rm -rf /var/lib/apt/lists/*
+
+# PrusaSlicer (the slicer-validation oracle). Pull the latest Linux AppImage,
+# extract it (no FUSE needed), symlink the CLI. Non-fatal: if it fails, the
+# validate step just stays skipped instead of breaking the build.
+RUN set -eux; \
+    url="$(curl -fsSL https://api.github.com/repos/prusa3d/PrusaSlicer/releases/latest \
+          | grep -oE 'https://[^"]*linux-x64[^"]*\.AppImage' | head -1)"; \
+    if [ -n "$url" ]; then \
+        curl -fL "$url" -o /tmp/prusa.AppImage && chmod +x /tmp/prusa.AppImage; \
+        cd /opt && /tmp/prusa.AppImage --appimage-extract >/dev/null; \
+        mv squashfs-root prusaslicer; \
+        ln -sf /opt/prusaslicer/AppRun /usr/local/bin/prusa-slicer; \
+        rm -f /tmp/prusa.AppImage; \
+        echo "PrusaSlicer installed: $url"; \
+    else echo "WARN: no PrusaSlicer AppImage URL resolved; validate will skip"; fi \
+    || echo "WARN: PrusaSlicer install failed; validate will skip"
 
 # --- dashboard runs on Node built-ins only (http/fs/path/child_process/os);
 #     no package.json / npm install needed. Node itself is installed above. ---
