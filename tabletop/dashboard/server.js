@@ -517,6 +517,34 @@ function revealFile(opts) {
   return { ok: true, revealed: safe };
 }
 
+// Delete a result file (STL/GLB) + its report sidecars. Allowlisted to the
+// outputs result dirs by extension + path resolution.
+function deleteOutput(opts) {
+  const name = opts && opts.name ? path.basename(String(opts.name)) : '';
+  if (!name) return { ok: false, error: 'name required' };
+  let dir;
+  if (/\.stl$/i.test(name))      dir = STL_DIR;
+  else if (/\.glb$/i.test(name)) dir = MESHES;
+  else return { ok: false, error: 'only .stl/.glb can be deleted' };
+  const target  = path.resolve(path.join(dir, name));
+  const outRoot = path.resolve(path.join(TABLETOP, 'outputs'));
+  if (!target.startsWith(outRoot)) return { ok: false, error: 'path outside outputs dir' };
+  const removed = [];
+  try {
+    if (fs.existsSync(target)) { fs.unlinkSync(target); removed.push(name); }
+    // remove sidecar reports that share the stem
+    const stem = name.replace(/\.(stl|glb)$/i, '');
+    for (const sfx of ['.cleanup.json', '.validate.json', '.print.json']) {
+      const sc = path.join(dir, stem + sfx);
+      if (fs.existsSync(sc)) { fs.unlinkSync(sc); removed.push(stem + sfx); }
+    }
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+  if (!removed.length) return { ok: false, error: 'not found' };
+  return { ok: true, removed };
+}
+
 function killPipeline() {
   if (process.platform === 'win32') {
     cp.exec(
@@ -549,6 +577,7 @@ const server = http.createServer(async (req, res) => {
     if (url === '/api/run')        result = launchRun(body);
     else if (url === '/api/concept') result = genConcept(body);
     else if (url === '/api/kill')  result = killPipeline();
+    else if (url === '/api/delete') result = deleteOutput(body);
     else if (url === '/api/reveal') result = revealFile(body);
     else { res.writeHead(404); res.end('not found'); return; }
     const b = JSON.stringify(result);
