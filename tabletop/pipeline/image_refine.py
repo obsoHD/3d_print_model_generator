@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 HERE          = Path(__file__).resolve().parent
@@ -31,7 +32,8 @@ REALVIS_DIR   = TABLETOP_ROOT / "models" / "realvisxl"
 
 
 def _venv_py() -> str:
-    return str(HY_DIR / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python")
+    # One shared interpreter on the Linux workstation (override with GEN3D_PY).
+    return os.environ.get("GEN3D_PY") or sys.executable
 
 
 def _can_refine() -> bool:

@@ -18,18 +18,19 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 HERE          = Path(__file__).resolve().parent
 TABLETOP_ROOT = HERE.parent
-VENV_PY       = TABLETOP_ROOT / "pixal3d_venv" / "Scripts" / "python.exe"
+# One shared interpreter on the Linux workstation (override with GEN3D_PY).
+VENV_PY       = os.environ.get("GEN3D_PY") or sys.executable
 LIB_DIR       = TABLETOP_ROOT / "TripoSG"
 WEIGHTS_DIR   = TABLETOP_ROOT / "models" / "triposg"
 
 
 def _ready() -> bool:
-    return (VENV_PY.exists()
-            and (LIB_DIR / "triposg" / "inference_utils.py").exists())
+    return (LIB_DIR / "triposg" / "inference_utils.py").exists()
 
 
 def generate(image_path: str, out_path: str,
@@ -42,7 +43,6 @@ def generate(image_path: str, out_path: str,
     if not _ready():
         raise RuntimeError(
             f"TripoSG not installed. Need:\n"
-            f"  venv:    {VENV_PY}  (exists={VENV_PY.exists()})\n"
             f"  library: {LIB_DIR}  (exists={LIB_DIR.exists()})\n"
         )
     img = Path(image_path)

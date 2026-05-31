@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b2230"/>
+      <stop offset="1" stop-color="#10151f"/>
+    </linearGradient>
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5eead4"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)" stroke="#2b3445" stroke-width="1.5"/>
+  <!-- isometric cube: top face + two side faces, with print-layer lines -->
+  <g stroke="#0b0f17" stroke-width="1.2" stroke-linejoin="round">
+    <polygon points="32,14 50,24 32,34 14,24" fill="url(#top)"/>
+    <polygon points="14,24 32,34 32,52 14,42" fill="#2563eb"/>
+    <polygon points="50,24 32,34 32,52 50,42" fill="#1e40af"/>
+  </g>
+  <!-- print layer lines on the right face -->
+  <g stroke="#5eead4" stroke-width="0.8" opacity="0.55">
+    <line x1="33" y1="38" x2="49" y2="29"/>
+    <line x1="33" y1="43" x2="49" y2="34"/>
+    <line x1="33" y1="48" x2="49" y2="39"/>
+  </g>
+</svg>

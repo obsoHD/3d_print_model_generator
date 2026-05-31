@@ -27,6 +27,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 TABLETOP_ROOT = HERE.parent
 
+# Single shared interpreter for all spawned pipeline subprocesses. On the Linux
+# workstation every engine lives in one env, so this is just the running python
+# (override with GEN3D_PY if you split envs). Windows multi-venv layout is retired.
+PY = os.environ.get("GEN3D_PY") or sys.executable
+
 # Output dirs
 OUT_CONCEPTS = TABLETOP_ROOT / "outputs" / "concepts"
 OUT_MESHES   = TABLETOP_ROOT / "outputs" / "meshes"
@@ -104,25 +109,21 @@ def check_models() -> dict:
     }
     # Pixal3D
     px_dir = models_dir / "pixal3d"
-    px_venv = TABLETOP_ROOT / "pixal3d_venv" / "Scripts" / "python.exe"
     report["engines"]["pixal3d"] = {
-        "ready": px_dir.exists() and (px_dir / "pipeline.json").exists()
-                 and px_venv.exists(),
+        "ready": px_dir.exists() and (px_dir / "pipeline.json").exists(),
         "path": str(px_dir),
     }
     # Hunyuan3D 2.1 (the NEW winner — Tencent, most production-mature)
     hy21_dir = TABLETOP_ROOT / "Hunyuan3D-2.1"
     report["engines"]["hunyuan21"] = {
         "ready": hy21_dir.exists()
-                 and (hy21_dir / "hy3dshape" / "hy3dshape" / "pipelines.py").exists()
-                 and px_venv.exists(),
+                 and (hy21_dir / "hy3dshape" / "hy3dshape" / "pipelines.py").exists(),
         "path": str(hy21_dir),
     }
     # Parametric CAD (build123d) — terrain, watertight by construction
-    cad_py = TABLETOP_ROOT / "cad_venv" / "Scripts" / "python.exe"
     terrain_lib = HERE / "parametric" / "terrain_lib.py"
     report["engines"]["parametric"] = {
-        "ready": cad_py.exists() and terrain_lib.exists(),
+        "ready": terrain_lib.exists(),
         "path": str(terrain_lib),
         "templates": list(PARAMETRIC_KEYWORDS),
     }
@@ -130,8 +131,7 @@ def check_models() -> dict:
     tg_dir = TABLETOP_ROOT / "TripoSG"
     report["engines"]["triposg"] = {
         "ready": tg_dir.exists()
-                 and (tg_dir / "triposg" / "inference_utils.py").exists()
-                 and px_venv.exists(),
+                 and (tg_dir / "triposg" / "inference_utils.py").exists(),
         "path": str(tg_dir),
     }
     # LoRAs
@@ -175,12 +175,11 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             out_path=str(mesh_glb),
             front=mv_front, left=mv_left, back=mv_back,
             gif=mv_gif, reverse=mv_reverse,
-            seed=seed or 42, steps=30, octree_resolution=380)
+            seed=seed or 42, steps=30, octree_resolution=512)
         stl_path = Path(out_stl) if out_stl else (OUT_STL / f"{run_id}.stl")
-        vpy = TABLETOP_ROOT / "pixal3d_venv" / "Scripts" / "python.exe"
         print("  [2/3] sharp finish (pymeshfix, no resample)...")
         fproc = subprocess.run(
-            [str(vpy), str(HERE / "finish_mini.py"),
+            [PY, str(HERE / "finish_mini.py"),
              "--input", str(mesh_glb), "--output", str(stl_path),
              "--scale-mm", str(scale_mm)],
             capture_output=True, text=True, timeout=600)
@@ -190,7 +189,7 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
         validated = None
         try:
             vproc = subprocess.run(
-                [str(vpy), str(HERE / "slicer_validate.py"),
+                [PY, str(HERE / "slicer_validate.py"),
                  "--input", str(stl_path), "--printer", printer],
                 capture_output=True, text=True, timeout=400)
             vfile = stl_path.with_suffix(".validate.json")
@@ -228,12 +227,11 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
     # ============================================================
     if engine == "parametric":
         import subprocess, json as _json
-        cad_py = TABLETOP_ROOT / "cad_venv" / "Scripts" / "python.exe"
         terrain_lib = HERE / "parametric" / "terrain_lib.py"
         stl_path = Path(out_stl) if out_stl else (OUT_STL / f"{run_id}.stl")
         print("  [1/2] parametric CAD generation (build123d)...")
         proc = subprocess.run(
-            [str(cad_py), str(terrain_lib),
+            [PY, str(terrain_lib),
              "--prompt", prompt, "--output", str(stl_path),
              "--scale-mm", str(scale_mm)],
             capture_output=True, text=True, timeout=300)
@@ -247,9 +245,8 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
         # Slicer validation gate
         val = {"PASS": None}
         try:
-            vpy = TABLETOP_ROOT / "pixal3d_venv" / "Scripts" / "python.exe"
             vproc = subprocess.run(
-                [str(vpy), str(HERE / "slicer_validate.py"),
+                [PY, str(HERE / "slicer_validate.py"),
                  "--input", str(stl_path), "--printer", printer],
                 capture_output=True, text=True, timeout=300)
             vfile = stl_path.with_suffix(".validate.json")
@@ -381,8 +378,8 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             image_path=str(concept_png),
             out_path=str(mesh_glb),
             seed=seed or 42,
-            steps=75,               # more diffusion refinement
-            octree_resolution=384,  # max geometry that fits 16 GB (~2.3x faces of 256)
+            steps=int(os.environ.get("HY_STEPS", "75")),     # diffusion refinement
+            octree_resolution=int(os.environ.get("HY_OCTREE", "512")),  # 5090/32GB: 512 (~1.8x faces of 384)
         )
         print(f"        -> {mesh_glb.name}")
     if engine in ("sparc3d", "both"):
@@ -446,10 +443,9 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
         # ============================================================
         if engine == "hunyuan21" and kind == "mini" and mesh_glb.exists():
             import subprocess, json as _json
-            vpy = TABLETOP_ROOT / "pixal3d_venv" / "Scripts" / "python.exe"
             print("  [3/4] sharp mini finish (pymeshfix, no resample)...")
             fproc = subprocess.run(
-                [str(vpy), str(HERE / "finish_mini.py"),
+                [PY, str(HERE / "finish_mini.py"),
                  "--input", str(mesh_glb), "--output", str(stl_path),
                  "--scale-mm", str(scale_mm)],
                 capture_output=True, text=True, timeout=600)
@@ -459,7 +455,7 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             validated = None
             try:
                 vproc = subprocess.run(
-                    [str(vpy), str(HERE / "slicer_validate.py"),
+                    [PY, str(HERE / "slicer_validate.py"),
                      "--input", str(stl_path), "--printer", printer],
                     capture_output=True, text=True, timeout=400)
                 vfile = stl_path.with_suffix(".validate.json")
@@ -490,7 +486,6 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             try:
                 import subprocess
                 gauntlet_py = HERE / "mesh_gauntlet.py"
-                venv_py = TABLETOP_ROOT / "pixal3d_venv" / "Scripts" / "python.exe"
                 # Engine-aware gauntlet mode. Hunyuan3D 2.1 produces clean
                 # topology (~10 splits) so we skip the destructive
                 # voxel-remesh solidify and orient steps — wall thickness
@@ -513,7 +508,7 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
                     gauntlet_args = []
                     print(f"  [2b/4] mesh gauntlet (repair + orient + seat + solidify)...")
                 proc = subprocess.run(
-                    [str(venv_py), str(gauntlet_py),
+                    [PY, str(gauntlet_py),
                      "--input",    str(mesh_glb),
                      "--output",   str(repaired_glb),
                      "--scale-mm", str(scale_mm), *gauntlet_args],
@@ -551,16 +546,10 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             os.environ["SKIP_DETAIL_ENHANCE"] = "1"
         if os.environ.get("SKIP_DETAIL_ENHANCE", "0") != "1":
             try:
-                from hunyuan3d.venv.Scripts import python  # presence check
-            except Exception:
-                pass  # we shell out to the venv python anyway
-            try:
                 import subprocess
-                venv_py = str(TABLETOP_ROOT / "hunyuan3d" / "venv" /
-                              ("Scripts" if os.name == "nt" else "bin") / "python")
                 inner = HERE / "detail_enhance.py"
                 proc = subprocess.run(
-                    [venv_py, str(inner), "--input", str(stl_path)],
+                    [PY, str(inner), "--input", str(stl_path)],
                     capture_output=True, text=True, timeout=120)
                 if proc.returncode == 0:
                     print("  [3b/4] detail enhancement applied (PyMeshLab)")
@@ -583,9 +572,8 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
         validated = None
         try:
             import subprocess
-            vpy = TABLETOP_ROOT / "pixal3d_venv" / "Scripts" / "python.exe"
             vproc = subprocess.run(
-                [str(vpy), str(HERE / "slicer_validate.py"),
+                [PY, str(HERE / "slicer_validate.py"),
                  "--input", str(stl_path), "--printer", printer],
                 capture_output=True, text=True, timeout=400)
             vfile = stl_path.with_suffix(".validate.json")

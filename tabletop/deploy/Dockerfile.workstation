@@ -19,6 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git git-lfs build-essential cmake ninja-build \
         libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
         libgomp1 curl ca-certificates xvfb \
+        blender \
+        libgtk-3-0 libwebkit2gtk-4.1-0 \
+
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && git lfs install \

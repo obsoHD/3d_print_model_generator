@@ -165,16 +165,24 @@ function _deriveSubstage(procRunning, cmdLines, logTail) {
   return { running: true, stage: 'concept', substep: 'starting up…' };
 }
 
+// List running python command lines, cross-platform (Linux workstation = ps).
+function _listPythonCmds(cb) {
+  if (process.platform === 'win32') {
+    cp.exec(
+      'powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"name=\'python.exe\'\\\" | Select-Object -ExpandProperty CommandLine"',
+      { timeout: 6000 },
+      (err, stdout) => cb((err || !stdout) ? '' : stdout));
+  } else {
+    cp.exec('ps -eo args=', { timeout: 6000, maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout) => cb((err || !stdout) ? '' : stdout));
+  }
+}
+
 function _refreshStage() {
-  cp.exec(
-    'powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"name=\'python.exe\'\\\" | Select-Object -ExpandProperty CommandLine"',
-    { timeout: 6000 },
-    (err, stdout) => {
-      const cmdLines = (err || !stdout) ? '' : stdout;
-      const logTail  = _readLogTail();
-      _stageCache = _deriveSubstage(true, cmdLines, logTail);
-    }
-  );
+  _listPythonCmds((cmdLines) => {
+    const logTail = _readLogTail();
+    _stageCache = _deriveSubstage(true, cmdLines, logTail);
+  });
 }
 _refreshStage();
 setInterval(_refreshStage, 3000);
@@ -388,7 +396,7 @@ function genConcept(opts) {
   const ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
   const fn = `_concept_${ts}.png`;
   const dst = path.join(CONCEPTS, fn);
-  const cpy = path.join(TABLETOP, 'comfyui', 'venv', 'Scripts', 'python.exe');
+  const cpy = process.env.GEN3D_PY || 'python';
   const code = `import sys;sys.path.insert(0,r'${path.join(TABLETOP,'pipeline')}');`
     + `import concept_gen;concept_gen.generate(prompt=${JSON.stringify(prompt)},`
     + `out_path=r'${dst}',kind=${JSON.stringify(kind)},`
@@ -477,7 +485,7 @@ function _spawnOrchestrate(args, slug, prompt, kind, engine, mv_engine) {
   if (mv_engine) childEnv.MV_ENGINE = mv_engine;
   // detached + unref so the orchestrator survives dashboard server restarts.
   // Without this, stopping the dashboard process kills its child (HY3D, etc).
-  const child = cp.spawn('python', ['-u', ...args], {
+  const child = cp.spawn(process.env.GEN3D_PY || 'python', ['-u', ...args], {
     cwd: pipeDir, detached: true, stdio: ['ignore', logFd, logFd],
     env: childEnv,
     windowsHide: true,
@@ -510,10 +518,19 @@ function revealFile(opts) {
 }
 
 function killPipeline() {
-  cp.exec(
-    'powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"name=\'python.exe\'\\\" | Where-Object {$_.CommandLine -match \'orchestrate|hy3d_infer\'} | ForEach-Object {Stop-Process -Id $_.ProcessId -Force}"',
-    { timeout: 8000 }, () => {}
-  );
+  if (process.platform === 'win32') {
+    cp.exec(
+      'powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"name=\'python.exe\'\\\" | Where-Object {$_.CommandLine -match \'orchestrate|hy3d_infer\'} | ForEach-Object {Stop-Process -Id $_.ProcessId -Force}"',
+      { timeout: 8000 }, () => {}
+    );
+  } else {
+    // Linux workstation: pattern-kill the pipeline subprocess tree.
+    cp.exec(
+      "pkill -f orchestrate.py; pkill -f hy3d_infer; pkill -f _hunyuan; " +
+      "pkill -f _triposg_infer; pkill -f finish_mini; pkill -f mesh_gauntlet",
+      { timeout: 8000 }, () => {}
+    );
+  }
   return { ok: true };
 }
 
@@ -586,6 +603,35 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404); res.end('not found');
     }
 
+  } else if (url.startsWith('/api/download/')) {
+    // Force-download a result file (STL/GLB/3MF) — works from any machine on
+    // the network. Allowlisted to the outputs result dirs by extension.
+    const fname = path.basename(decodeURIComponent(url.slice('/api/download/'.length)));
+    let fpath = null, ctype = 'application/octet-stream';
+    if (/\.stl$/i.test(fname))       { fpath = path.join(STL_DIR, fname); ctype = 'model/stl'; }
+    else if (/\.glb$/i.test(fname))  { fpath = path.join(MESHES,  fname); ctype = 'model/gltf-binary'; }
+    else if (/\.(3mf|gcode|obj|ply)$/i.test(fname)) { fpath = path.join(STL_DIR, fname); }
+    if (fpath && fs.existsSync(fpath)) {
+      const data = fs.readFileSync(fpath);
+      res.writeHead(200, {
+        'Content-Type': ctype,
+        'Content-Length': data.length,
+        'Content-Disposition': `attachment; filename="${fname}"`,
+      });
+      res.end(data);
+    } else {
+      res.writeHead(404); res.end('not found');
+    }
+
+  } else if (url === '/favicon.svg' || url === '/favicon.ico') {
+    const icoPath = path.join(DASH_DIR, 'favicon.svg');
+    if (fs.existsSync(icoPath)) {
+      const svg = fs.readFileSync(icoPath);
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml',
+        'Content-Length': svg.length, 'Cache-Control': 'max-age=86400' });
+      res.end(svg);
+    } else { res.writeHead(404); res.end('not found'); }
+
   } else if (url === '/' || url === '/index.html') {
     const html = fs.readFileSync(path.join(DASH_DIR, 'index.html'));
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': html.length });
@@ -596,6 +642,8 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`Dashboard: http://localhost:${PORT}`);
+// Bind all interfaces so the dashboard is reachable from other machines on the
+// network (and downloadable results work from any computer).
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Dashboard listening on 0.0.0.0:${PORT} (network-accessible)`);
 });

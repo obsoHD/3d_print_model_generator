@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -39,7 +40,7 @@ def generate(image_path: str, out_path: str | None = None,
         out_path = str(TABLETOP_ROOT / "outputs" / "previews" / f"{img.stem}.png")
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
 
-    py = str(HY_DIR / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python")
+    py = os.environ.get("GEN3D_PY") or sys.executable
     entry = HY_DIR / "hy3d_infer.py"
 
     cmd = [

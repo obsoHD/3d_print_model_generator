@@ -27,6 +27,8 @@ HERE          = Path(__file__).resolve().parent
 TABLETOP_ROOT = HERE.parent
 HY_DIR        = TABLETOP_ROOT / "hunyuan3d"
 MODELS_DIR    = TABLETOP_ROOT / "models"
+# One shared interpreter on the Linux workstation (override with GEN3D_PY).
+PY            = os.environ.get("GEN3D_PY") or sys.executable
 
 # Model registry: name -> (subdir, kind, format)
 #   format: 'diffusers'  -> full diffusers folder (model_index.json + subfolders)
@@ -111,10 +113,10 @@ def _remove_bg(img_path: str) -> None:
     need a clean silhouette — this gives them one. Overwrites img_path
     with a clean-BG version of the same image.
 
-    Runs as a subprocess in the hunyuan3d venv (which has rembg + torch)
-    so we don't depend on the orchestrator's interpreter having rembg.
+    Runs as a subprocess on the shared workstation interpreter (rembg + torch
+    installed in the one env).
     """
-    py = str(HY_DIR / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python")
+    py = PY
     code = (
         "import sys; from PIL import Image; from rembg import remove, new_session\n"
         "p = sys.argv[1]\n"
@@ -157,7 +159,7 @@ def generate(prompt: str, out_path: str, kind: str = "terrain",
     print(f"  [concept_gen] model={name}  kind={kind}", flush=True)
     print(f"  [concept_gen] prompt: {full_prompt[:90]}...", flush=True)
 
-    py    = str(HY_DIR / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python")
+    py    = PY
     inner = HERE / "_concept_infer.py"
 
     cmd = [py, str(inner),

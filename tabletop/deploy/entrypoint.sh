@@ -6,7 +6,19 @@ set -euo pipefail
 DATA=/data
 mkdir -p "$DATA/hf" "$DATA/models" "$DATA/outputs"
 
-# Point the pipeline's model + output roots at the NVMe data volume.
+# All pipeline subprocesses share the one container interpreter.
+export GEN3D_PY="${GEN3D_PY:-$(command -v python)}"
+
+# The pipeline + dashboard resolve models/outputs relative to the repo
+# (TABLETOP/models, TABLETOP/outputs). Symlink those onto the NVMe data volume
+# so heavy weights + results live on /data, not inside the image layer.
+APP=/app/tabletop
+for d in models outputs; do
+  if [ ! -L "$APP/$d" ]; then
+    rm -rf "$APP/$d" 2>/dev/null || true
+    ln -s "$DATA/$d" "$APP/$d"
+  fi
+done
 export GEN3D_MODELS_DIR="${GEN3D_MODELS_DIR:-$DATA/models}"
 export GEN3D_OUTPUTS_DIR="${GEN3D_OUTPUTS_DIR:-$DATA/outputs}"
 export HF_HOME="${HF_HOME:-$DATA/hf}"

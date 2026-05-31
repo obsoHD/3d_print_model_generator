@@ -56,6 +56,18 @@ HF cache in `/opt/gen3d/data/hf`. Either:
 - pre-seed by `rsync`-ing the proven model tree from the dev PC into
   `/opt/gen3d/data/models`.
 
+## What changed for the workstation (Windows retired)
+- **One interpreter.** All engines spawn `GEN3D_PY` (the container python) instead
+  of per-engine Windows venvs. Entrypoint sets it; override per engine if you split
+  envs later.
+- **Detail bumped to 5090 class.** `octree_resolution` defaults to **512** for both
+  single-view and multi-view Hunyuan (env overrides: `HY_OCTREE`, `HY_STEPS`).
+- **Networked + downloadable.** Dashboard binds `0.0.0.0:7800`, has a favicon, a
+  phone-landscape layout, and every result is downloadable from any machine on the
+  LAN via `/api/download/<file>` (click a result row).
+- **Data on NVMe.** Entrypoint symlinks `tabletop/models` + `tabletop/outputs` →
+  `/data/...` so weights and results never bloat the image layer.
+
 ## Notes / known box-iteration points
 - **CUDA**: base is `cuda:12.8.0-devel`. Blackwell (sm_120) has **no** kernels in
   cu124 — do not downgrade torch to cu124. Confirm `nvidia-smi` shows CUDA >=12.8.

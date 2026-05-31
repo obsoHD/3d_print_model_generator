@@ -13,23 +13,24 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 HERE          = Path(__file__).resolve().parent
 TABLETOP_ROOT = HERE.parent
-VENV_PY       = TABLETOP_ROOT / "pixal3d_venv" / "Scripts" / "python.exe"
+# One shared interpreter on the Linux workstation (override with GEN3D_PY).
+VENV_PY       = os.environ.get("GEN3D_PY") or sys.executable
 LIB_DIR       = TABLETOP_ROOT / "Hunyuan3D-2.1"
 
 
 def _ready() -> bool:
-    return (VENV_PY.exists()
-            and (LIB_DIR / "hy3dshape" / "hy3dshape" / "pipelines.py").exists())
+    return (LIB_DIR / "hy3dshape" / "hy3dshape" / "pipelines.py").exists()
 
 
 def generate(image_path: str, out_path: str,
              seed: int = 42,
              steps: int = 75,
-             octree_resolution: int = 384,
+             octree_resolution: int = 512,
              timeout_s: int = 1800) -> str:
     """Run Hunyuan3D 2.1 shape pipeline. Returns the output GLB path.
 
@@ -41,7 +42,6 @@ def generate(image_path: str, out_path: str,
     if not _ready():
         raise RuntimeError(
             f"Hunyuan3D 2.1 not installed. Need:\n"
-            f"  venv:    {VENV_PY}  (exists={VENV_PY.exists()})\n"
             f"  library: {LIB_DIR}  (exists={LIB_DIR.exists()})\n"
         )
     img = Path(image_path)

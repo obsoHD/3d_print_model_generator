@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -23,8 +24,9 @@ SPARC_WEIGHTS = TABLETOP_ROOT / "models" / "sparc3d"
 
 # Default invocation. The upstream repo's actual entrypoint may differ;
 # override SPARC3D_CLI to point at the right script.
+# One shared interpreter on the Linux workstation (override with GEN3D_PY).
 DEFAULT_CLI = (
-    str(SPARC_DIR / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python"),
+    os.environ.get("GEN3D_PY") or sys.executable,
     "-m", "sparc3d.run_image2mesh",
     "--image",  "{image}",
     "--output", "{output}",

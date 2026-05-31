@@ -18,13 +18,15 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 HERE          = Path(__file__).resolve().parent
 TABLETOP_ROOT = HERE.parent
-# Dedicated venv (py3.12 + torch 2.8.0+cu129 + 4 CUDA wheels + nvdiffrast).
-# Lives at pixal3d_venv to avoid Windows case-collision with the Pixal3D/ repo.
-VENV_PY       = TABLETOP_ROOT / "pixal3d_venv" / "Scripts" / "python.exe"
+# One shared interpreter on the Linux workstation (override with GEN3D_PY).
+# NOTE: Pixal3D ships only Windows CUDA wheels, so it is not active on Linux —
+# _ready() stays False there because the Pixal3D lib/weights aren't provisioned.
+VENV_PY       = os.environ.get("GEN3D_PY") or sys.executable
 MODEL_DIR     = TABLETOP_ROOT / "models" / "pixal3d"
 # Upstream Pixal3D (TencentARC/Pixal3D) — has sdpa attention branch.
 PIXAL_LIB     = TABLETOP_ROOT / "Pixal3D"
@@ -32,8 +34,7 @@ PIXAL_INFER   = PIXAL_LIB / "inference.py"
 
 
 def _ready() -> bool:
-    return (VENV_PY.exists()
-            and PIXAL_INFER.exists()
+    return (PIXAL_INFER.exists()
             and (MODEL_DIR / "pipeline.json").exists()
             and (PIXAL_LIB / "pixal3d" / "__init__.py").exists())
 
@@ -59,7 +60,6 @@ def generate(image_path: str, out_path: str,
     if not _ready():
         raise RuntimeError(
             f"Pixal3D not installed. Need:\n"
-            f"  venv:    {VENV_PY}  (exists={VENV_PY.exists()})\n"
             f"  weights: {MODEL_DIR}  (pipeline.json={(MODEL_DIR / 'pipeline.json').exists()})\n"
             f"  library: {PIXAL_LIB}  (exists={PIXAL_LIB.exists()})\n"
         )

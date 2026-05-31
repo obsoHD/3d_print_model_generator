@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Dict
 
@@ -51,7 +52,7 @@ def generate(image_path: str, out_dir: str, run_id: str,
     if not img_in.exists():
         raise FileNotFoundError(f"input image not found: {img_in}")
 
-    py = str(HY_DIR / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python")
+    py = os.environ.get("GEN3D_PY") or sys.executable
     grid_out = out_dir / f"{run_id}_mv_grid.png"
 
     if engine == "mvadapter":
