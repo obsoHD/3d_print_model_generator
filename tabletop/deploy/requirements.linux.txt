@@ -15,6 +15,7 @@
 # torch (see Dockerfile). Putting it here would fail under pip build isolation.
 trimesh==4.10.1
 pymeshfix==0.18.1
+pyvista             # required: pymeshfix's .mesh accessor (finish_mini) builds a pyvista PolyData
 # hy3dshape (Hunyuan 2.1 shape path) imports these at load/run; unpinned so the
 # resolver picks py3.12 + numpy-2 compatible wheels (repo pins are old).
 pymeshlab
