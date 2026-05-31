@@ -888,7 +888,7 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
       <div id="wz-multi" style="display:none">
         <div class="wz-tabs">
           <div class="wz-tab on" data-mvmode="views" onclick="wzMvMode('views',this)">3 views</div>
-          <div class="wz-tab" data-mvmode="gif" onclick="wzMvMode('gif',this)">Turntable GIF</div>
+          <div class="wz-tab" data-mvmode="gif" onclick="wzMvMode('gif',this)">Turntable GIF / MP4</div>
         </div>
         <div class="wz-panel on" data-mvmode="views">
           <div class="wz-views">
@@ -992,8 +992,13 @@ function wzSetFile(target,dataUrl){
     wzCheckMulti(); }
 }
 function wzThumb(id,dataUrl){ const d=document.getElementById(id);
-  d.querySelectorAll('img').forEach(i=>i.remove());
-  const im=new Image(); im.src=dataUrl; d.appendChild(im); }
+  d.querySelectorAll('img,video').forEach(i=>i.remove());
+  let el;
+  if(/^data:video\//i.test(dataUrl)){            // MP4/MOV turntable preview
+    el=document.createElement('video');
+    el.src=dataUrl; el.muted=true; el.autoplay=true; el.loop=true; el.playsInline=true;
+  } else { el=new Image(); el.src=dataUrl; }
+  d.appendChild(el); }
 function wzThumbView(view,dataUrl){
   const drops=[...document.querySelectorAll('#wz-multi [data-mvmode="views"] .wz-drop')];
   const map={front:0,left:1,back:2}; const d=drops[map[view]];

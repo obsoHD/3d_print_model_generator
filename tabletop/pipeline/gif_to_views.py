@@ -24,14 +24,31 @@ def extract(path: str, out_dir: str, reverse: bool = False) -> dict:
         im = Image.open(p)
         frames = [f.convert("RGBA").copy() for f in ImageSequence.Iterator(im)]
     else:
+        # Video (mp4/mov/webm/avi/...). Try imageio first, then OpenCV — the
+        # latter has bundled ffmpeg codecs and reads mp4/h264 reliably.
+        import numpy as np
+        frames = []
         try:
             import imageio.v3 as iio
-            import numpy as np
             vid = iio.imread(p, index=None)  # (T,H,W,C)
             frames = [Image.fromarray(np.asarray(fr)).convert("RGBA")
                       for fr in vid]
-        except Exception as e:
-            raise RuntimeError(f"cannot read {path}: {e}")
+        except Exception:
+            frames = []
+        if len(frames) < 2:
+            try:
+                import cv2
+                cap = cv2.VideoCapture(str(p))
+                frames = []
+                while True:
+                    ok, fr = cap.read()
+                    if not ok:
+                        break
+                    fr = cv2.cvtColor(fr, cv2.COLOR_BGR2RGB)
+                    frames.append(Image.fromarray(fr).convert("RGBA"))
+                cap.release()
+            except Exception as e:
+                raise RuntimeError(f"cannot read video {path}: {e}")
     n = len(frames)
     if n < 2:
         raise RuntimeError(f"{path}: only {n} frame(s) — need a turntable sequence")
