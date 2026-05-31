@@ -61,6 +61,13 @@ RUN git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1.git /ap
  && python -m pip install -e /app/tabletop/Hunyuan3D-2.1/hy3dshape || true \
  && python -m pip install -e /app/tabletop/Hunyuan3D-2/hy3dgen      || true
 
+# pymeshlab's Qt plugins (used by hy3dshape postprocessors) link libOpenGL.so.0
+# et al. Install the GL runtime libs as a late layer so the heavy steps above
+# stay cached. Without these, pymeshlab imports but every filter fails to load.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libopengl0 libegl1 libglx0 libglu1-mesa \
+    && rm -rf /var/lib/apt/lists/*
+
 # --- dashboard runs on Node built-ins only (http/fs/path/child_process/os);
 #     no package.json / npm install needed. Node itself is installed above. ---
 
