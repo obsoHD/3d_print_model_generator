@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      - PORT=7800
+      - DASHBOARD_PORT=7800              # server.js reads DASHBOARD_PORT (default 7842)
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
       - HF_HOME=/data/hf
       - NVIDIA_VISIBLE_DEVICES=${GEN3D_GPUS:-all}

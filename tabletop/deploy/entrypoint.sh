@@ -27,5 +27,6 @@ export DISPLAY=:99
 ( Xvfb :99 -screen 0 1280x1024x24 >/dev/null 2>&1 & ) || true
 
 cd /app/tabletop/dashboard
-echo "[entrypoint] starting dashboard on :${PORT:-7800}"
+export DASHBOARD_PORT="${DASHBOARD_PORT:-7800}"
+echo "[entrypoint] starting dashboard on :${DASHBOARD_PORT}"
 exec node server.js
