@@ -15,6 +15,12 @@
 # torch (see Dockerfile). Putting it here would fail under pip build isolation.
 trimesh==4.10.1
 pymeshfix==0.18.1
+# hy3dshape (Hunyuan 2.1 shape path) imports these at load/run; unpinned so the
+# resolver picks py3.12 + numpy-2 compatible wheels (repo pins are old).
+pymeshlab
+pygltflib
+scikit-image
+imageio
 # numpy 2.x is REQUIRED on Linux: rembg 2.0.75 needs >=2.3, and torch 2.8 pulls
 # 2.4.x anyway. (The Windows env pinned <2 only for old CUDA wheels not used here.)
 numpy>=2.3,<3
