@@ -1031,9 +1031,9 @@ function wzBuildSummary(){
   const kind = single ? document.getElementById('wz-kind').value
                       : document.getElementById('wz-kind2').value;
   let inp;
-  if(single){ inp = WZ.mode==='prompt'
-    ? `prompt → concept image (${WZ.conceptPath?'ready':'—'})`
-    : (WZ.single?'uploaded image':'—'); }
+  if(single){ inp = WZ.single ? 'uploaded image'
+    : (WZ.conceptPath ? 'prompt → concept image (ready)'
+    : (WZ.mode==='prompt' ? 'prompt → concept image (—)' : '—')); }
   else { inp = WZ.mvmode==='gif' ? (WZ.mv.gif?'turntable GIF':'—')
     : `front/left/back (${['front','left','back'].filter(v=>WZ.mv[v]).length}/3)`; }
   document.getElementById('wz-summary').innerHTML =
@@ -1048,14 +1048,17 @@ async function wzStart(){
   if(single){
     const kind=document.getElementById('wz-kind').value;
     const printer=document.getElementById('wz-printer').value;
-    if(WZ.mode==='prompt'){
-      if(!WZ.conceptPath){ toast('Generate an image first','err'); return; }
-      body={engine:'hunyuan21',kind,printer,prompt:document.getElementById('wz-prompt').value.trim(),
-        input_image_path:WZ.conceptPath};
-    } else {
-      if(!WZ.single){ toast('Upload an image','err'); return; }
+    // Use whatever input exists — an uploaded image wins regardless of which
+    // tab is active; otherwise fall back to a prompt-generated concept.
+    if(WZ.single){
       body={engine:'hunyuan21',kind,printer,prompt:'uploaded subject',
         concept_image_data_url:WZ.single};
+    } else if(WZ.conceptPath){
+      body={engine:'hunyuan21',kind,printer,
+        prompt:(document.getElementById('wz-prompt').value.trim()||'concept'),
+        input_image_path:WZ.conceptPath};
+    } else {
+      toast('Upload an image, or generate one from a prompt first','err'); return;
     }
   } else {
     const kind=document.getElementById('wz-kind2').value;
