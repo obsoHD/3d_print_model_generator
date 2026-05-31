@@ -177,6 +177,19 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             gif=mv_gif, reverse=mv_reverse,
             seed=seed or 42, steps=int(os.environ.get("HY_STEPS", "50")),
             octree_resolution=int(os.environ.get("HY_OCTREE", "768")))
+        # Drop the front view as {run_id}.png so the dashboard discovers this run
+        # (it keys runs off outputs/concepts/{run_id}.png) and the preview
+        # switches to the multi-view result instead of the last single-view run.
+        try:
+            import shutil as _sh
+            _front = mv_front if (mv_front and Path(mv_front).exists()) else None
+            if _front is None:
+                _vf = OUT_MESHES / f"{run_id}_views" / "front.png"
+                _front = str(_vf) if _vf.exists() else None
+            if _front:
+                _sh.copy(_front, OUT_CONCEPTS / f"{run_id}.png")
+        except Exception as _e:
+            print(f"  [mv] concept thumbnail copy skipped: {_e}", flush=True)
         stl_path = Path(out_stl) if out_stl else (OUT_STL / f"{run_id}.stl")
         print("  [2/3] sharp finish (pymeshfix, no resample)...")
         fproc = subprocess.run(
