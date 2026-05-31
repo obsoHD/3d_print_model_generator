@@ -36,6 +36,7 @@ huggingface_hub==0.36.2
 safetensors
 einops
 omegaconf
+timm            # required: hy3dshape denoiser (moe_layers) imports timm ViT blocks
 
 # --- image / background removal ---
 pillow
