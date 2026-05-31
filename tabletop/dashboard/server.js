@@ -11,7 +11,11 @@ const CONCEPTS  = path.join(TABLETOP, 'outputs', 'concepts');
 const MESHES    = path.join(TABLETOP, 'outputs', 'meshes');
 const STL_DIR   = path.join(TABLETOP, 'outputs', 'stl');
 const LOG_DIR   = path.join(TABLETOP, 'outputs', 'logs');
-if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+// Ensure all output dirs exist (fresh /data/outputs only has what we make here).
+// Missing concepts/ was crashing saveUserImage on upload.
+for (const d of [CONCEPTS, MESHES, STL_DIR, LOG_DIR]) {
+  try { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); } catch (e) {}
+}
 let _activeLog = null;   // path to current run's log file
 
 // ── CPU + RAM ────────────────────────────────────────────────────────────────
@@ -562,6 +566,10 @@ function killPipeline() {
   return { ok: true };
 }
 
+// Last-resort guards: keep the dashboard alive even if something throws async.
+process.on('uncaughtException',  (e) => console.error('[uncaught]', e && e.stack || e));
+process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
+
 // ── HTTP ─────────────────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
@@ -574,12 +582,17 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST') {
     const body = await readBody(req);
     let result;
-    if (url === '/api/run')        result = launchRun(body);
-    else if (url === '/api/concept') result = genConcept(body);
-    else if (url === '/api/kill')  result = killPipeline();
-    else if (url === '/api/delete') result = deleteOutput(body);
-    else if (url === '/api/reveal') result = revealFile(body);
-    else { res.writeHead(404); res.end('not found'); return; }
+    try {
+      if (url === '/api/run')        result = launchRun(body);
+      else if (url === '/api/concept') result = genConcept(body);
+      else if (url === '/api/kill')  result = killPipeline();
+      else if (url === '/api/delete') result = deleteOutput(body);
+      else if (url === '/api/reveal') result = revealFile(body);
+      else { res.writeHead(404); res.end('not found'); return; }
+    } catch (e) {
+      // Never let a handler error crash the whole server.
+      result = { ok: false, error: String(e && e.message || e) };
+    }
     const b = JSON.stringify(result);
     res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b) });
     res.end(b);
