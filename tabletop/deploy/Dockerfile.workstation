@@ -1,0 +1,58 @@
+# ============================================================
+#  3d_print_model_generator — workstation image (dual RTX 5090)
+#  Base: CUDA 12.8 (Blackwell sm_120 needs >=12.8; 12.4 has no
+#  sm_120 kernels). Confirm host driver >=570 with nvidia-smi.
+# ============================================================
+FROM nvidia/cuda:12.8.0-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    TORCH_CUDA_ARCH_LIST="12.0" \
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    HF_HOME=/data/hf \
+    NODE_MAJOR=20
+
+# --- system deps (python, node, build chain, mesh/gl libs) ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3.12 python3.12-dev python3.12-venv python3-pip \
+        git git-lfs build-essential cmake ninja-build \
+        libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
+        libgomp1 curl ca-certificates xvfb \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && git lfs install \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# --- python: torch (cu128) first, then the curated active-engine deps ---
+COPY tabletop/deploy/requirements.linux.txt /tmp/requirements.linux.txt
+RUN python -m pip install --upgrade pip wheel setuptools \
+ && python -m pip install torch==2.8.0 torchvision==0.23.0 \
+        --index-url https://download.pytorch.org/whl/cu128 \
+ && python -m pip install -r /tmp/requirements.linux.txt
+
+# --- clone the Hunyuan codebases the engines import (code only; weights -> /data) ---
+#   single-view path uses hy3dshape (2.1 repo); mv path uses hy3dgen (2.0 repo)
+RUN git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1.git /app/tabletop/Hunyuan3D-2.1 \
+ && git clone --depth 1 https://github.com/Tencent/Hunyuan3D-2.git        /app/tabletop/Hunyuan3D-2 \
+ && python -m pip install -e /app/tabletop/Hunyuan3D-2.1/hy3dshape || true \
+ && python -m pip install -e /app/tabletop/Hunyuan3D-2/hy3dgen      || true
+
+# --- node deps for the dashboard ---
+COPY tabletop/dashboard/package*.json /app/tabletop/dashboard/
+RUN cd /app/tabletop/dashboard && (npm ci --omit=dev || npm install --omit=dev || true)
+
+# --- app code (bind-mounted read-only in compose; COPY is the fallback) ---
+COPY tabletop /app/tabletop
+
+COPY tabletop/deploy/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 7800
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
+    CMD curl -fsS http://localhost:7800/ >/dev/null || exit 1
+
+ENTRYPOINT ["/entrypoint.sh"]

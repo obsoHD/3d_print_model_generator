@@ -1,0 +1,46 @@
+# Curated Linux deps for the ACTIVE engines (Hunyuan single/mv, TripoSG, parametric).
+# Versions mirror the proven Windows env; torch is cu128 because Blackwell (RTX 5090,
+# sm_120) has NO kernels in cu124 — CUDA 12.8+ is mandatory.
+#
+# torch/torchvision are installed separately in the Dockerfile from the cu128 index:
+#   pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
+#
+# The Pixal3D Windows CUDA wheels (cumesh_vb/drtk/natten/nvdiffrast/o_voxel/flex_gemm_ap)
+# are intentionally OMITTED — Pixal3D is installed-but-unused; on Linux those build from
+# source if ever needed. diso (TripoSG DMC) builds from source on first run.
+
+# --- core 3D / mesh ---
+trimesh==4.10.1
+pymeshfix==0.18.1
+diso==0.1.4
+numpy<2
+scipy
+networkx
+shapely
+
+# --- diffusion / models ---
+diffusers==0.37.1
+transformers==4.57.3
+accelerate==1.13.0
+huggingface_hub==0.36.2
+safetensors
+einops
+omegaconf
+
+# --- image / background removal ---
+pillow
+opencv-python-headless
+rembg==2.0.75
+onnxruntime-gpu==1.26.0
+
+# --- parametric CAD track ---
+build123d
+cadquery-ocp
+
+# --- auto-orient ---
+tweaker3 @ git+https://github.com/ChristophSchranz/Tweaker-3.git@d444290a732b8b72d10a701feed4e36a5284897d
+
+# --- misc ---
+tqdm
+pyyaml
+requests

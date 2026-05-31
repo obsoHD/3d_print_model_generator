@@ -1,0 +1,2170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Pipeline Studio · Project False Face</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700;800&display=swap"/>
+<style>
+:root{
+  /* Real-Time Monitoring palette — "code dark + run green" */
+  --bg:#0F172A;            /* slate-900 */
+  --bg2:#111a2e;
+  --panel:#1E293B;         /* slate-800 */
+  --panel-h:#243047;       /* hover */
+  --line:#293344;
+  --line2:#334155;         /* slate-700 */
+  --text:#F8FAFC;          /* slate-50 */
+  --dim:#CBD5E1;           /* slate-300 */
+  --dim2:#94A3B8;          /* slate-400 */
+  --dim3:#64748B;          /* slate-500 */
+  --dim4:#475569;          /* slate-600 */
+
+  --accent:#22C55E;        /* green-500 — run/live */
+  --accent-d:#16A34A;      /* green-600 */
+  --accent-soft:rgba(34,197,94,.14);
+  --accent-glow:rgba(34,197,94,.35);
+
+  --ok:#22C55E;
+  --info:#3B82F6;
+  --warn:#FFA500;
+  --err:#DC2626;
+
+  --rad:8px;
+  --rad-sm:5px;
+  --sans:'Fira Sans',system-ui,sans-serif;
+  --mono:'Fira Code',Consolas,monospace;
+}
+@media (prefers-reduced-motion: reduce){
+  *,::before,::after{animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;transition-duration:.01ms !important}
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);overflow:hidden}
+body{color:var(--text);font:14px/1.5 var(--sans);letter-spacing:-.003em;
+  display:flex;flex-direction:column}
+button{cursor:pointer;font-family:inherit;font-size:inherit;color:inherit;
+  background:none;border:none}
+input,select,textarea{font-family:inherit;font-size:13px;color:var(--text);
+  background:var(--bg2);border:1px solid var(--line2);border-radius:var(--rad-sm);
+  outline:none;padding:9px 12px;transition:border-color .2s,background .2s}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-soft)}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:var(--dim4)}
+
+/* SVG icons - inherit color */
+.ico{width:14px;height:14px;flex-shrink:0;display:inline-block;
+  vertical-align:-2px;fill:none;stroke:currentColor;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
+.ico-lg{width:16px;height:16px}
+
+/* ── HEADER ─────────────────────────────────────────────────────────── */
+header{display:flex;align-items:center;justify-content:space-between;
+  padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--line2);
+  flex-shrink:0;z-index:30}
+.brand{display:flex;align-items:center;gap:12px}
+.brand-logo{width:32px;height:32px;border-radius:7px;display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--accent),var(--accent-d));
+  color:#000;font-weight:800;font-size:15px;font-family:var(--mono);
+  letter-spacing:-.04em;box-shadow:0 0 14px var(--accent-glow)}
+.brand-name{font-weight:700;font-size:14px;letter-spacing:-.02em;line-height:1.2}
+.brand-sub{color:var(--dim2);font-size:11px;font-family:var(--mono);margin-top:1px}
+.head-r{display:flex;align-items:center;gap:8px}
+.chip{display:flex;align-items:center;gap:7px;padding:5px 11px;background:var(--bg2);
+  border:1px solid var(--line);border-radius:18px;font-size:11px;color:var(--dim);
+  font-variant-numeric:tabular-nums;font-family:var(--mono);
+  transition:border-color .2s}
+.chip-k{color:var(--dim3);font-weight:600;font-size:9px;letter-spacing:.06em;
+  text-transform:uppercase;font-family:var(--sans)}
+.chip-v{color:var(--text);font-weight:600}
+.chip.warn{border-color:var(--warn)} .chip.warn .chip-v{color:var(--warn)}
+.chip.err{border-color:var(--err)}   .chip.err  .chip-v{color:var(--err)}
+.chip.live{border-color:var(--accent)} .chip.live .chip-v{color:var(--accent)}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 8px var(--accent);animation:livePulse 1.8s infinite}
+.live-dot.off{background:var(--dim4);box-shadow:none;animation:none}
+@keyframes livePulse{0%,100%{opacity:1}50%{opacity:.45}}
+#clock{color:var(--dim2);font-size:12px;font-variant-numeric:tabular-nums;
+  margin-left:6px;font-family:var(--mono)}
+
+/* ── MAIN GRID: 3-COL DASHBOARD ─────────────────────────────────────── */
+main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
+  flex:1;min-height:0;overflow:hidden}
+.col{display:flex;flex-direction:column;gap:14px;min-height:0;overflow-y:auto;
+  padding-right:2px}
+
+/* ── CARD ───────────────────────────────────────────────────────────── */
+.card{background:var(--panel);border:1px solid var(--line2);border-radius:var(--rad);
+  padding:14px;display:flex;flex-direction:column;gap:11px;flex-shrink:0}
+.card-head{display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:2px}
+.card-title{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.1em;color:var(--dim2)}
+.card-title .ico{stroke:var(--accent)}
+
+/* ── GPU MONITOR — ring + bars ─────────────────────────────────────── */
+.ring-box{display:flex;justify-content:center;padding:6px 0}
+.ring{position:relative;width:140px;height:140px}
+.ring svg{transform:rotate(-90deg)}
+.ring .ring-bg{fill:none;stroke:var(--bg2);stroke-width:9}
+.ring .ring-fill{fill:none;stroke:var(--accent);stroke-width:9;
+  stroke-linecap:round;transition:stroke-dashoffset .9s cubic-bezier(.4,0,.2,1),stroke .4s;
+  filter:drop-shadow(0 0 6px var(--accent-glow))}
+.ring-center{position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1px;font-family:var(--mono)}
+.ring-val{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+.ring-lbl{font-size:10px;color:var(--dim2);letter-spacing:.1em;
+  text-transform:uppercase;font-family:var(--sans);font-weight:600}
+
+.bars{display:flex;flex-direction:column;gap:8px}
+.bar-row{}
+.bar-meta{display:flex;justify-content:space-between;font-size:11px;
+  margin-bottom:4px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.bar-meta b{color:var(--dim2);font-weight:600;font-family:var(--sans);
+  text-transform:uppercase;font-size:10px;letter-spacing:.06em}
+.bar-track{height:6px;background:var(--bg2);border-radius:3px;overflow:hidden;
+  border:1px solid var(--line)}
+.bar-fill{height:100%;border-radius:3px;
+  transition:width .7s cubic-bezier(.4,0,.2,1)}
+.bar-fill.vram{background:linear-gradient(90deg,#0EA5E9,#3B82F6)}
+.bar-fill.temp{background:linear-gradient(90deg,#22C55E,#FFA500,#DC2626)}
+
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px}
+.stat{padding:8px 9px;background:var(--bg2);border:1px solid var(--line);
+  border-radius:var(--rad-sm)}
+.stat-v{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;
+  font-family:var(--mono)}
+.stat-k{font-size:9px;color:var(--dim3);text-transform:uppercase;
+  letter-spacing:.07em;font-weight:600;margin-top:1px}
+
+/* ── LAUNCH FORM ───────────────────────────────────────────────────── */
+.form-row{display:flex;flex-direction:column;gap:5px}
+.form-row label{font-size:10px;font-weight:700;color:var(--dim2);
+  text-transform:uppercase;letter-spacing:.06em}
+.form-row textarea{resize:vertical;min-height:64px;line-height:1.45}
+.form-2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.launch-actions{display:flex;gap:6px;margin-top:4px}
+.btn{padding:9px 14px;border-radius:var(--rad-sm);font-weight:600;font-size:12px;
+  border:1px solid var(--line2);background:var(--bg2);color:var(--text);
+  transition:all .2s;display:inline-flex;align-items:center;gap:6px;
+  white-space:nowrap;justify-content:center;cursor:pointer}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn:focus{box-shadow:0 0 0 3px var(--accent-soft);outline:none}
+.btn:active{transform:scale(.98)}
+.btn.primary{background:var(--accent);color:#0a1f12;border-color:var(--accent);
+  font-weight:700;flex:1;box-shadow:0 0 12px var(--accent-glow)}
+.btn.primary:hover{background:var(--accent-d);color:#fff;border-color:var(--accent-d)}
+.btn.icon{padding:9px 11px;flex:none}
+.btn.danger:hover{border-color:var(--err);color:var(--err)}
+
+/* ── PIPELINE TIMELINE (the star) ──────────────────────────────────── */
+.pl-card{padding:18px 20px;background:linear-gradient(180deg,#1c2640,var(--panel))}
+.pl-top{display:flex;align-items:flex-start;justify-content:space-between;
+  gap:14px;margin-bottom:18px}
+.pl-prompt{font-style:italic;color:var(--text);font-size:13px;line-height:1.5;
+  padding:9px 13px;background:var(--bg2);border-left:3px solid var(--accent);
+  border-radius:0 var(--rad-sm) var(--rad-sm) 0;flex:1;min-width:0;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pl-status{display:flex;align-items:center;gap:8px;flex-shrink:0;font-size:12px;
+  color:var(--dim);font-family:var(--mono);font-weight:600;
+  padding:7px 12px;background:var(--bg2);border:1px solid var(--line);
+  border-radius:18px}
+.pl-status.live{color:var(--accent);border-color:var(--accent)}
+.pl-status.done{color:var(--accent)}
+
+/* Step timeline — circles sit on a single horizontal track.
+   Track is at exact circle-center. Done segments fill with accent. */
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:0;position:relative;
+  margin:14px 0 18px;padding:0 5%}
+.steps.steps-6{grid-template-columns:repeat(6,1fr);padding:0 2%}
+.steps.steps-9{grid-template-columns:repeat(9,1fr);padding:0 1%}
+
+/* Single continuous track behind every circle. Top equals circle-center. */
+.steps::before{content:'';position:absolute;left:8%;right:8%;
+  top:19px;   /* 38px circle / 2 = 19 → mid-circle */
+  height:2px;background:var(--line);z-index:0;border-radius:1px}
+.steps.steps-6::before,.steps.steps-9::before{
+  top:16px;   /* 32px circle / 2 = 16 → mid-circle for compact modes */
+}
+
+/* The "progress fill" of the track grows with done steps. JS sets --done-pct. */
+.steps::after{content:'';position:absolute;left:8%;
+  top:19px;height:2px;background:var(--accent);z-index:0;
+  width:calc((100% - 16%) * var(--done-pct, 0));
+  transition:width .6s cubic-bezier(.4,0,.2,1);
+  box-shadow:0 0 6px var(--accent-glow);border-radius:1px}
+.steps.steps-6::after,.steps.steps-9::after{top:16px}
+
+.step{display:flex;flex-direction:column;align-items:center;gap:8px;
+  position:relative;z-index:1}
+
+.steps.steps-9 .step-circle{width:32px;height:32px;font-size:12px}
+.steps.steps-9 .step-label{font-size:10px;font-weight:700}
+.steps.steps-9 .step-sub{font-size:9px}
+.steps.steps-6 .step-circle{width:32px;height:32px;font-size:12px}
+
+.step-circle{width:38px;height:38px;border-radius:50%;background:var(--bg2);
+  border:2px solid var(--line);display:grid;place-items:center;
+  font-size:13px;font-weight:800;font-family:var(--mono);color:var(--dim2);
+  transition:all .35s cubic-bezier(.4,0,.2,1);position:relative}
+.step.done .step-circle{background:var(--accent);border-color:var(--accent);
+  color:#0a1f12;box-shadow:0 0 12px var(--accent-glow)}
+.step.active .step-circle{background:var(--accent);border-color:var(--accent);
+  color:#0a1f12;animation:stepPulse 1.5s ease-in-out infinite}
+@keyframes stepPulse{
+  0%,100%{box-shadow:0 0 0 0 var(--accent-glow),0 0 16px var(--accent-glow)}
+  50%{box-shadow:0 0 0 10px transparent,0 0 24px var(--accent-glow)}}
+.step-label{font-size:11px;color:var(--dim2);font-weight:600;text-align:center;
+  letter-spacing:.04em;transition:color .3s}
+.step.done .step-label,.step.active .step-label{color:var(--text)}
+.step-sub{font-size:9px;color:var(--dim3);font-family:var(--mono);text-align:center;
+  letter-spacing:.04em;min-height:13px}
+.step.active .step-sub{color:var(--accent)}
+.step.done .step-sub{color:var(--dim2)}
+
+/* Progress + ETA */
+.prog{display:flex;flex-direction:column;gap:9px}
+.prog-top{display:flex;justify-content:space-between;align-items:baseline;
+  font-size:12px;color:var(--dim2);font-family:var(--mono);
+  font-variant-numeric:tabular-nums}
+.prog-top b{color:var(--accent);font-weight:700;font-size:14px}
+.prog-bar{height:8px;background:var(--bg2);border-radius:4px;overflow:hidden;
+  border:1px solid var(--line);position:relative}
+.prog-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-d));
+  transition:width 1.2s cubic-bezier(.4,0,.2,1);position:relative;border-radius:3px;
+  box-shadow:0 0 8px var(--accent-glow)}
+.prog-fill::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.3),transparent);
+  animation:shimmer 1.8s linear infinite}
+.prog-fill.idle::after{display:none}
+@keyframes shimmer{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.prog-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.prog-stat{padding:9px;background:var(--bg2);border:1px solid var(--line);
+  border-radius:var(--rad-sm);text-align:center}
+.prog-stat-v{font-size:15px;font-weight:700;font-family:var(--mono);
+  font-variant-numeric:tabular-nums;line-height:1.2}
+.prog-stat-k{font-size:9px;color:var(--dim3);text-transform:uppercase;
+  letter-spacing:.07em;font-weight:600;margin-top:2px}
+.prog-substep{font-size:11px;color:var(--dim);background:var(--bg2);padding:8px 12px;
+  border-radius:var(--rad-sm);border-left:2px solid var(--accent);font-style:italic;
+  font-family:var(--mono);min-height:32px;display:flex;align-items:center}
+
+/* Live log tail — reveals what's actually happening */
+.log-wrap{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.log-head{display:flex;align-items:center;justify-content:space-between;font-size:10px;
+  color:var(--dim2);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.log-head svg{stroke:var(--accent);margin-right:5px}
+.log-btn{font-size:9px;color:var(--dim2);padding:2px 7px;border:1px solid var(--line);
+  border-radius:3px;background:var(--bg2);font-family:var(--sans);cursor:pointer;
+  letter-spacing:.04em;text-transform:uppercase;transition:all .15s}
+.log-btn:hover{color:var(--accent);border-color:var(--accent)}
+.log-btn.on{color:var(--accent);border-color:var(--accent)}
+.log-tail{background:#06090f;border:1px solid var(--line);border-radius:var(--rad-sm);
+  padding:10px 12px;font-family:var(--mono);font-size:10.5px;line-height:1.55;
+  color:var(--dim);height:160px;overflow-y:auto;white-space:pre-wrap;word-break:break-word}
+.log-tail .ll-empty{color:var(--dim3);font-style:italic}
+.log-tail .ll-cmd{color:var(--accent)}
+.log-tail .ll-err{color:var(--err)}
+.log-tail .ll-warn{color:var(--warn)}
+.log-tail .ll-info{color:var(--dim)}
+.log-tail .ll-stage{color:var(--accent);font-weight:600}
+
+/* Multi-view thumbnail strip overlay on concept image */
+.mv-strip{position:absolute;left:8px;right:8px;bottom:8px;display:flex;gap:6px;
+  background:rgba(15,23,42,.85);backdrop-filter:blur(8px);
+  border:1px solid var(--line2);border-radius:var(--rad-sm);padding:6px;
+  justify-content:center}
+.mv-thumb{position:relative;flex:1;max-width:70px;aspect-ratio:1;border-radius:3px;
+  overflow:hidden;background:var(--bg);border:1px solid var(--line);cursor:pointer;
+  transition:border-color .15s,transform .15s}
+.mv-thumb:hover{border-color:var(--accent);transform:translateY(-2px)}
+.mv-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.mv-thumb.empty{display:grid;place-items:center;opacity:.55}
+.mv-thumb.empty::before{content:'';width:20px;height:1px;background:var(--dim3)}
+.mv-thumb .mv-l{position:absolute;top:2px;left:2px;font-size:7px;font-weight:800;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--text);
+  padding:1px 4px;background:rgba(0,0,0,.7);border-radius:2px;font-family:var(--sans);
+  line-height:1}
+.mv-thumb.active{border-color:var(--accent);box-shadow:0 0 8px var(--accent-glow)}
+
+/* idle hero */
+.pl-idle{text-align:center;padding:30px 12px;color:var(--dim2)}
+.pl-idle .pl-i-ttl{font-size:14px;color:var(--dim);margin-bottom:5px;font-weight:600}
+.pl-idle .pl-i-sub{font-size:12px;color:var(--dim3);line-height:1.5}
+
+/* ── CONCEPT + 3D preview tabs ─────────────────────────────────────── */
+.tabs{display:flex;gap:4px;background:var(--bg2);padding:3px;border-radius:var(--rad-sm);
+  border:1px solid var(--line)}
+.tab{padding:6px 12px;border-radius:3px;font-size:11px;font-weight:600;color:var(--dim2);
+  letter-spacing:.04em;cursor:pointer;transition:all .15s}
+.tab:hover{color:var(--text)}
+.tab.active{background:var(--accent);color:#0a1f12;font-weight:700}
+
+.preview-wrap{aspect-ratio:16/10;background:var(--bg2);border-radius:var(--rad-sm);
+  position:relative;overflow:hidden;border:1px solid var(--line)}
+.preview-wrap img{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+.preview-wrap canvas{width:100%;height:100%;display:block}
+.preview-empty{position:absolute;inset:0;display:grid;place-items:center;
+  color:var(--dim3);font-size:12px;text-align:center;padding:20px;font-family:var(--mono)}
+.preview-meta{font-family:var(--mono);font-size:10px;color:var(--dim3);
+  margin-top:5px;display:flex;justify-content:space-between}
+
+/* 3D controls inside preview */
+.v-ctrl{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);
+  display:flex;gap:2px;background:rgba(15,23,42,.85);
+  border:1px solid var(--line2);border-radius:18px;padding:3px 5px;
+  backdrop-filter:blur(8px)}
+.v-cbtn{padding:4px 10px;border-radius:14px;font-size:10px;font-weight:600;
+  color:var(--dim2);letter-spacing:.02em;cursor:pointer;transition:color .15s,background .15s}
+.v-cbtn:hover{color:var(--text);background:rgba(255,255,255,.06)}
+.v-cbtn.on{color:var(--accent)}
+
+/* ── OUTPUT FILES + HISTORY ────────────────────────────────────────── */
+.out-list{display:flex;flex-direction:column;gap:6px}
+.out-row{display:flex;align-items:center;gap:9px;padding:9px 10px;
+  background:var(--bg2);border:1px solid var(--line);border-radius:var(--rad-sm);
+  transition:border-color .15s;cursor:pointer}
+.out-row:hover{border-color:var(--accent)}
+.out-icon{width:30px;height:30px;border-radius:var(--rad-sm);display:grid;place-items:center;
+  background:var(--accent-soft);color:var(--accent);flex-shrink:0}
+.out-info{flex:1;min-width:0}
+.out-name{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;font-family:var(--mono)}
+.out-meta{font-size:10px;color:var(--dim2);margin-top:2px;font-family:var(--mono)}
+.out-check{color:var(--accent);font-size:13px;flex-shrink:0}
+
+.hist-list{display:flex;flex-direction:column;gap:5px;max-height:340px;overflow-y:auto}
+.hist-row{display:flex;align-items:center;gap:9px;padding:7px 9px;background:var(--bg2);
+  border:1px solid var(--line);border-radius:var(--rad-sm);transition:border-color .15s;
+  cursor:pointer}
+.hist-row:hover{border-color:var(--accent);transform:translateX(2px);
+  transition:border-color .15s,transform .12s}
+.hist-row.hist-active{cursor:pointer;
+  box-shadow:0 0 0 1px var(--accent),0 0 16px var(--accent-glow)}
+.hist-thumb{width:34px;height:34px;border-radius:var(--rad-sm);object-fit:cover;
+  flex-shrink:0;background:var(--bg);border:1px solid var(--line)}
+.hist-ph{width:34px;height:34px;border-radius:var(--rad-sm);background:var(--bg);
+  border:1px solid var(--line);display:grid;place-items:center;color:var(--dim3);flex-shrink:0}
+.hist-info{flex:1;min-width:0}
+.hist-prompt{font-size:11px;color:var(--text);font-weight:500;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.hist-ts{font-size:9px;color:var(--dim3);font-family:var(--mono);margin-top:1px}
+.hbadge{padding:2px 6px;border-radius:3px;font-size:8px;font-weight:800;
+  letter-spacing:.05em;flex-shrink:0;font-family:var(--mono)}
+.hbadge.done{background:var(--accent-soft);color:var(--accent)}
+.hbadge.wip{background:rgba(255,165,0,.15);color:var(--warn)}
+
+/* ── OUTPUT ROW (clickable) ────────────────────────────────────────── */
+.out-row{cursor:pointer;transition:border-color .15s,transform .12s}
+.out-row:hover{border-color:var(--accent);transform:translateX(2px)}
+.out-row:active{transform:translateX(0)}
+
+/* ── NEW MODAL ─────────────────────────────────────────────────────── */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.7);
+  backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;
+  z-index:200;padding:24px;animation:mFade .15s}
+.modal-backdrop.open{display:flex}
+@keyframes mFade{from{opacity:0}to{opacity:1}}
+.modal-box{background:var(--panel);border:1px solid var(--line2);
+  border-radius:14px;width:min(96vw,1100px);max-height:92vh;
+  display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.modal-hdr{display:flex;align-items:center;justify-content:space-between;
+  padding:18px 24px;border-bottom:1px solid var(--line2);background:var(--bg2)}
+.modal-hdr h2{font-size:16px;font-weight:700;letter-spacing:-.01em;
+  display:flex;align-items:center;gap:11px}
+.modal-hdr h2 svg{stroke:var(--accent)}
+.modal-x{padding:6px 12px;color:var(--dim2);font-size:18px;
+  border-radius:5px;background:transparent;border:1px solid transparent;transition:all .15s}
+.modal-x:hover{background:var(--bg2);color:var(--text);border-color:var(--line2)}
+.modal-body{padding:22px;overflow-y:auto;display:grid;
+  grid-template-columns:1.2fr 1fr;gap:24px}
+.modal-foot{padding:14px 24px;border-top:1px solid var(--line2);background:var(--bg2);
+  display:flex;justify-content:space-between;align-items:center;gap:12px}
+
+.nm-section{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
+.nm-section h3{font-size:11px;font-weight:800;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--dim2);display:flex;align-items:center;gap:8px}
+.nm-section h3::after{content:'';flex:1;height:1px;background:var(--line)}
+.nm-prompt{width:100%;min-height:100px;padding:12px 14px;font-size:14px;
+  line-height:1.5;font-family:var(--sans)}
+.nm-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.nm-row label{display:flex;flex-direction:column;gap:5px;font-size:11px;
+  font-weight:700;color:var(--dim2);text-transform:uppercase;letter-spacing:.04em}
+.nm-row select,.nm-row input{padding:9px 11px}
+
+/* Upload area */
+.nm-drop{border:2px dashed var(--line2);border-radius:var(--rad);
+  padding:24px;text-align:center;color:var(--dim2);font-size:13px;
+  transition:all .15s;cursor:pointer;background:var(--bg2)}
+.nm-drop:hover,.nm-drop.drag{border-color:var(--accent);
+  background:rgba(34,197,94,.04);color:var(--text)}
+.nm-drop svg{width:28px;height:28px;stroke:var(--dim2);margin-bottom:8px}
+.nm-drop.drag svg{stroke:var(--accent)}
+.nm-drop b{display:block;margin:6px 0 2px;color:var(--text);font-weight:600}
+.nm-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.nm-thumb{width:64px;height:64px;border-radius:5px;overflow:hidden;
+  border:1px solid var(--line2);position:relative;background:var(--bg)}
+.nm-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.nm-thumb .nm-th-x{position:absolute;top:2px;right:2px;width:18px;height:18px;
+  border-radius:50%;background:rgba(0,0,0,.7);color:#fff;display:grid;
+  place-items:center;font-size:11px;cursor:pointer}
+.nm-thumb .nm-th-lbl{position:absolute;bottom:1px;left:2px;font-size:8px;
+  font-family:var(--sans);font-weight:800;letter-spacing:.04em;
+  text-transform:uppercase;color:#fff;background:rgba(0,0,0,.7);
+  padding:1px 4px;border-radius:2px}
+
+/* Pipeline diagram */
+.nm-pipeline{background:var(--bg2);border:1px solid var(--line);
+  border-radius:var(--rad);padding:16px}
+.nm-stage{display:grid;grid-template-columns:30px 1fr;gap:11px;
+  padding:9px 0;border-bottom:1px solid var(--line);align-items:center}
+.nm-stage:last-child{border-bottom:none}
+.nm-stage .nm-st-no{display:grid;place-items:center;width:24px;height:24px;
+  border-radius:50%;background:var(--bg);border:1px solid var(--line2);
+  font-size:11px;font-weight:700;font-family:var(--mono);color:var(--dim)}
+.nm-stage.opt .nm-st-no{color:var(--dim3);border-style:dashed}
+.nm-st-name{font-size:13px;font-weight:600;color:var(--text)}
+.nm-st-desc{font-size:11px;color:var(--dim2);margin-top:1px;line-height:1.4}
+.nm-stage.opt .nm-st-name{color:var(--dim2)}
+.nm-stage.toggleable{cursor:pointer;transition:background .15s}
+.nm-stage.toggleable:hover{background:var(--panel-h);
+  margin:0 -8px;padding:9px 8px;border-radius:5px}
+.nm-stage.toggleable.on .nm-st-no{background:var(--accent);color:#0a1f12;
+  border-color:var(--accent);border-style:solid}
+.nm-stage.toggleable.on .nm-st-name{color:var(--text)}
+
+/* ── TOAST ─────────────────────────────────────────────────────────── */
+#toasts{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column-reverse;
+  gap:7px;z-index:50;pointer-events:none}
+.toast{padding:10px 14px;border-radius:var(--rad-sm);font-size:12px;font-weight:600;
+  background:var(--panel);border:1px solid var(--line2);color:var(--text);
+  pointer-events:auto;animation:tIn .25s ease-out;max-width:280px;
+  box-shadow:0 4px 12px rgba(0,0,0,.4)}
+.toast.ok{border-color:var(--accent);color:var(--accent)}
+.toast.err{border-color:var(--err);color:var(--err)}
+@keyframes tIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* Responsive */
+@media(max-width:1280px){main{grid-template-columns:240px 1fr 280px;gap:12px;padding:12px}}
+@media(max-width:1024px){main{grid-template-columns:1fr;overflow-y:auto}
+  .col{overflow:visible}}
+</style>
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+}}
+</script>
+</head>
+<body>
+
+<!-- ── SVG ICON SPRITE ── -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></symbol>
+    <symbol id="i-rocket" viewBox="0 0 24 24"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09zM12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2zM9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+    <symbol id="i-img" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><polyline points="12 7 12 12 16 14"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+    <symbol id="i-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+    <symbol id="i-spin" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></symbol>
+    <symbol id="i-wire" viewBox="0 0 24 24"><polygon points="12 2 22 7 22 17 12 22 2 17 2 7 12 2"/><path d="M2 7l10 5 10-5M12 12v10"/></symbol>
+  </defs>
+</svg>
+
+<header>
+  <div class="brand">
+    <div class="brand-logo">PS</div>
+    <div>
+      <div class="brand-name">Pipeline Studio</div>
+      <div class="brand-sub">project_false_face · rtx_5080</div>
+    </div>
+  </div>
+  <div class="head-r">
+    <div class="chip" id="chip-live"><span class="live-dot off" id="live-dot"></span>
+      <span class="chip-k">Status</span><span class="chip-v" id="chip-live-v">Idle</span></div>
+    <div class="chip" id="chip-gpu"><span class="chip-k">GPU</span><span class="chip-v" id="g-util">—</span></div>
+    <div class="chip" id="chip-vram"><span class="chip-k">VRAM</span><span class="chip-v" id="g-vram">—</span></div>
+    <div class="chip" id="chip-temp"><span class="chip-k">Temp</span><span class="chip-v" id="g-temp">—</span></div>
+    <span id="clock">--:--:--</span>
+  </div>
+</header>
+
+<main>
+
+<!-- ═════ LEFT COL ═════ -->
+<div class="col">
+
+  <!-- GPU Monitor -->
+  <div class="card">
+    <div class="card-head"><div class="card-title">
+      <svg class="ico"><use href="#i-cpu"/></svg>GPU Monitor</div></div>
+    <div class="ring-box">
+      <div class="ring">
+        <svg width="140" height="140" viewBox="0 0 140 140">
+          <circle class="ring-bg" cx="70" cy="70" r="60"/>
+          <circle class="ring-fill" id="ring-fill" cx="70" cy="70" r="60"
+            stroke-dasharray="376.99" stroke-dashoffset="376.99"/>
+        </svg>
+        <div class="ring-center">
+          <span class="ring-val" id="ring-val">0%</span>
+          <span class="ring-lbl">Utilization</span>
+        </div>
+      </div>
+    </div>
+    <div class="bars">
+      <div class="bar-row"><div class="bar-meta"><b>VRAM</b><span id="vram-txt">—</span></div>
+        <div class="bar-track"><div class="bar-fill vram" id="vram-bar" style="width:0%"></div></div></div>
+      <div class="bar-row"><div class="bar-meta"><b>Temp</b><span id="temp-txt">—</span></div>
+        <div class="bar-track"><div class="bar-fill temp" id="temp-bar" style="width:0%"></div></div></div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat"><div class="stat-v" id="s-free">—</div><div class="stat-k">VRAM Free</div></div>
+      <div class="stat"><div class="stat-v" id="s-used">—</div><div class="stat-k">VRAM Used</div></div>
+    </div>
+  </div>
+
+  <!-- CPU + RAM monitor -->
+  <div class="card">
+    <div class="card-head"><div class="card-title">
+      <svg class="ico"><use href="#i-cpu"/></svg>System Monitor</div></div>
+    <div class="ring-box">
+      <div class="ring">
+        <svg width="140" height="140" viewBox="0 0 140 140">
+          <circle class="ring-bg" cx="70" cy="70" r="60"/>
+          <circle class="ring-fill" id="ring-cpu" cx="70" cy="70" r="60"
+            stroke-dasharray="376.99" stroke-dashoffset="376.99"
+            style="stroke:var(--info)"/>
+        </svg>
+        <div class="ring-center">
+          <span class="ring-val" id="cpu-val">0%</span>
+          <span class="ring-lbl">CPU</span>
+        </div>
+      </div>
+    </div>
+    <div class="bars">
+      <div class="bar-row"><div class="bar-meta"><b>RAM</b><span id="ram-txt">—</span></div>
+        <div class="bar-track"><div class="bar-fill" id="ram-bar"
+          style="width:0%;background:linear-gradient(90deg,#3B82F6,#06B6D4)"></div></div></div>
+      <div class="bar-row"><div class="bar-meta"><b>Load 1m</b><span id="load-txt">—</span></div>
+        <div class="bar-track"><div class="bar-fill" id="load-bar"
+          style="width:0%;background:linear-gradient(90deg,#22C55E,#FFA500,#DC2626)"></div></div></div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat"><div class="stat-v" id="cpu-cores">—</div><div class="stat-k">Cores</div></div>
+      <div class="stat"><div class="stat-v" id="cpu-uptime">—</div><div class="stat-k">Uptime</div></div>
+    </div>
+    <div style="font-size:9px;color:var(--dim3);font-family:var(--mono);
+      text-align:center;margin-top:-4px" id="cpu-model">—</div>
+  </div>
+
+  <!-- Hidden form fields — used by the NEW modal -->
+  <textarea id="f-prompt" style="display:none"></textarea>
+  <select id="f-kind" style="display:none">
+    <option value="terrain">Terrain</option><option value="mini">Mini</option>
+    <option value="prop">Prop</option><option value="scatter">Scatter</option>
+  </select>
+  <select id="f-engine" style="display:none">
+    <option value="hunyuan">Hunyuan3D</option><option value="sparc3d">Sparc3D</option>
+  </select>
+  <select id="f-printer" style="display:none">
+    <option value="resin">Resin</option><option value="fdm">FDM</option>
+  </select>
+  <input id="f-seed" type="number" style="display:none"/>
+
+</div>
+
+<!-- ═════ CENTER COL — pipeline + preview ═════ -->
+<div class="col">
+
+  <!-- ── PIPELINE TIMELINE — THE STAR ── -->
+  <div class="card pl-card">
+    <div class="card-head">
+      <div class="card-title"><svg class="ico"><use href="#i-zap"/></svg>Active Pipeline</div>
+      <div class="pl-status" id="pl-stat">
+        <span class="live-dot off"></span><span>No active run</span>
+      </div>
+    </div>
+
+    <div id="pl-prompt-wrap" style="display:none">
+      <div class="pl-prompt" id="pl-prompt"></div>
+    </div>
+
+    <!-- 9-step timeline -->
+    <div class="steps steps-9" id="steps">
+      <div class="step" data-step="0">
+        <div class="step-circle">1</div>
+        <div class="step-label">Concept</div>
+        <div class="step-sub" data-sub="0">~30s</div>
+      </div>
+      <div class="step" data-step="1">
+        <div class="step-circle">2</div>
+        <div class="step-label">Refine</div>
+        <div class="step-sub" data-sub="1">~18s</div>
+      </div>
+      <div class="step" data-step="2">
+        <div class="step-circle">3</div>
+        <div class="step-label">BG Cut</div>
+        <div class="step-sub" data-sub="2">~6s</div>
+      </div>
+      <div class="step" data-step="3">
+        <div class="step-circle">4</div>
+        <div class="step-label">4 Views</div>
+        <div class="step-sub" data-sub="3">~40s</div>
+      </div>
+      <div class="step" data-step="4">
+        <div class="step-circle">5</div>
+        <div class="step-label">Upscale</div>
+        <div class="step-sub" data-sub="4">~60s</div>
+      </div>
+      <div class="step" data-step="5">
+        <div class="step-circle">6</div>
+        <div class="step-label">Fix + Top</div>
+        <div class="step-sub" data-sub="5">~60s</div>
+      </div>
+      <div class="step" data-step="6">
+        <div class="step-circle">7</div>
+        <div class="step-label">3D Mesh</div>
+        <div class="step-sub" data-sub="6">~28 min</div>
+      </div>
+      <div class="step" data-step="7">
+        <div class="step-circle">8</div>
+        <div class="step-label">Cleanup</div>
+        <div class="step-sub" data-sub="7">~3 min</div>
+      </div>
+      <div class="step" data-step="8">
+        <div class="step-circle"><svg class="ico" style="stroke-width:3"><use href="#i-check"/></svg></div>
+        <div class="step-label">STL Done</div>
+        <div class="step-sub" data-sub="8">ready</div>
+      </div>
+    </div>
+
+    <!-- Progress (visible only when active) -->
+    <div class="prog" id="prog-block" style="display:none">
+      <div class="prog-top">
+        <span>Overall progress</span>
+        <span><b id="p-pct">0%</b> · ETA <span id="p-eta">—</span></span>
+      </div>
+      <div class="prog-bar"><div class="prog-fill" id="p-fill" style="width:0%"></div></div>
+      <div class="prog-grid">
+        <div class="prog-stat"><div class="prog-stat-v" id="p-total">0%</div><div class="prog-stat-k">Total</div></div>
+        <div class="prog-stat"><div class="prog-stat-v" id="p-step">0%</div><div class="prog-stat-k">Step</div></div>
+        <div class="prog-stat"><div class="prog-stat-v" id="p-elapsed">0s</div><div class="prog-stat-k">Elapsed</div></div>
+        <div class="prog-stat"><div class="prog-stat-v" id="p-etav">—</div><div class="prog-stat-k">ETA</div></div>
+      </div>
+      <div class="prog-substep" id="p-substep">waiting…</div>
+
+      <!-- Live log tail — actually shows what's happening -->
+      <div class="log-wrap" id="log-wrap">
+        <div class="log-head">
+          <span><svg class="ico"><use href="#i-zap"/></svg>Live Output</span>
+          <button class="log-btn" id="log-autoscroll" onclick="toggleLogAutoscroll()">⇣ autoscroll</button>
+        </div>
+        <div class="log-tail" id="log-tail"></div>
+      </div>
+    </div>
+
+    <!-- Idle hero -->
+    <div class="pl-idle" id="pl-idle">
+      <div class="pl-i-ttl">Pipeline ready</div>
+      <div class="pl-i-sub">Enter a prompt on the left and click Launch.<br>
+        Watch each stage light up live as it runs.</div>
+    </div>
+  </div>
+
+  <!-- ── Output Preview ── -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><svg class="ico"><use href="#i-img"/></svg>Preview</div>
+      <div class="tabs">
+        <button class="tab active" id="tab-2d" onclick="setTab('2d')">Concept</button>
+        <button class="tab" id="tab-3d" onclick="setTab('3d')">3D Mesh</button>
+      </div>
+    </div>
+    <div class="preview-wrap" id="pv-wrap">
+      <div id="pv-2d" style="width:100%;height:100%;position:relative">
+        <div class="preview-empty" id="pv-2d-empty">No concept image yet</div>
+        <img id="pv-img" style="display:none" alt="concept image"/>
+        <!-- Multi-view thumbnail strip overlay (bottom) -->
+        <div class="mv-strip" id="mv-strip" style="display:none"></div>
+      </div>
+      <div id="pv-3d" style="display:none;position:absolute;inset:0">
+        <canvas id="pv-canvas"></canvas>
+        <div class="preview-empty" id="pv-3d-empty">No mesh yet</div>
+        <div class="v-ctrl" id="v-ctrl" style="display:none">
+          <button class="v-cbtn" id="v-spin" onclick="vSpin()">
+            <svg class="ico" style="width:11px;height:11px;vertical-align:-1px"><use href="#i-spin"/></svg> Spin</button>
+          <button class="v-cbtn" id="v-wire" onclick="vWire()">
+            <svg class="ico" style="width:11px;height:11px;vertical-align:-1px"><use href="#i-wire"/></svg> Wire</button>
+          <button class="v-cbtn" onclick="vFit()">⤢ Fit</button>
+        </div>
+      </div>
+    </div>
+    <div class="preview-meta">
+      <span id="pv-name">—</span>
+      <span id="pv-dim">—</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═════ RIGHT COL ═════ -->
+<div class="col">
+
+  <!-- NEW RUN button — full-width, opens rich modal -->
+  <button class="btn primary" id="btn-open-new"
+    style="padding:14px;font-size:14px;font-weight:700;letter-spacing:.04em"
+    onclick="openWizard()">
+    <svg class="ico ico-lg"><use href="#i-rocket"/></svg>NEW · Start a Pipeline
+  </button>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">
+      <svg class="ico"><use href="#i-folder"/></svg>Output Files</div></div>
+    <div class="out-list" id="out-list">
+      <div style="color:var(--dim3);font-size:11px;padding:8px;text-align:center">No outputs yet</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">
+      <svg class="ico"><use href="#i-history"/></svg>Recent Runs</div></div>
+    <div class="hist-list" id="hist-list">
+      <div style="color:var(--dim3);font-size:11px;padding:8px;text-align:center">No runs yet</div>
+    </div>
+  </div>
+
+</div>
+
+</main>
+
+<div id="toasts"></div>
+
+<!-- ════════════ NEW-RUN WIZARD ════════════ -->
+<style>
+.wz-back{position:fixed;inset:0;z-index:200;background:rgba(8,11,16,.82);
+  backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center}
+.wz-back.open{display:flex}
+.wz{width:min(920px,94vw);max-height:92vh;overflow:auto;background:var(--bg1,#10151c);
+  border:1px solid var(--line,#243042);border-radius:18px;padding:26px 30px;
+  box-shadow:0 24px 80px rgba(0,0,0,.6)}
+.wz-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.wz-title{font-size:18px;font-weight:800;letter-spacing:.02em}
+.wz-x{cursor:pointer;color:var(--dim2,#7d8a9c);font-size:20px;background:none;border:none}
+.wz-steps{display:flex;gap:8px;margin:14px 0 22px}
+.wz-step{flex:1;height:5px;border-radius:3px;background:var(--bg2,#1a2230)}
+.wz-step.on{background:var(--accent,#37e6a4)}
+.wz-screen{display:none}.wz-screen.on{display:block}
+.wz-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.wz-card{cursor:pointer;border:1.5px solid var(--line,#243042);border-radius:14px;
+  padding:22px;background:var(--bg2,#161d29);transition:border-color .15s,transform .1s}
+.wz-card:hover{border-color:var(--accent,#37e6a4);transform:translateY(-2px)}
+.wz-card.sel{border-color:var(--accent,#37e6a4);box-shadow:0 0 0 2px var(--accent-glow,rgba(55,230,164,.25))}
+.wz-card h3{margin:0 0 6px;font-size:15px}
+.wz-card p{margin:0;font-size:12px;color:var(--dim2,#8a98ab);line-height:1.5}
+.wz-card .tag{display:inline-block;margin-top:10px;font-size:10px;font-family:var(--mono,monospace);
+  color:var(--accent,#37e6a4);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+.wz-tabs{display:flex;gap:8px;margin-bottom:16px}
+.wz-tab{cursor:pointer;padding:8px 16px;border-radius:9px;background:var(--bg2,#161d29);
+  border:1px solid var(--line);font-size:12px;font-weight:600;color:var(--dim2)}
+.wz-tab.on{background:var(--accent,#37e6a4);color:#04130c;border-color:transparent}
+.wz-panel{display:none}.wz-panel.on{display:block}
+.wz-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.wz-row label{font-size:11px;color:var(--dim2);display:flex;flex-direction:column;gap:5px}
+.wz textarea,.wz select,.wz input{background:var(--bg2,#161d29);border:1px solid var(--line);
+  border-radius:9px;color:var(--text,#dfe7ef);padding:9px 11px;font-size:13px;font-family:inherit}
+.wz textarea{width:100%;min-height:74px;resize:vertical}
+.wz-drop{border:1.5px dashed var(--line,#2c3a4e);border-radius:12px;min-height:130px;
+  display:flex;align-items:center;justify-content:center;text-align:center;cursor:pointer;
+  background:var(--bg2,#141b27);color:var(--dim2);font-size:12px;position:relative;overflow:hidden}
+.wz-drop:hover{border-color:var(--accent,#37e6a4)}
+.wz-drop img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#0c1118}
+.wz-views{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.wz-views .wz-drop{min-height:150px;flex-direction:column;gap:6px}
+.wz-vlabel{font-size:11px;font-weight:700;color:var(--accent,#37e6a4);letter-spacing:.06em}
+.wz-foot{display:flex;justify-content:space-between;margin-top:24px;gap:10px}
+.wz-summary{font-size:13px;line-height:1.9}.wz-summary b{color:var(--accent,#37e6a4)}
+.wz-hint{font-size:11px;color:var(--dim3,#5c667a);margin-top:8px}
+.wz .btn{cursor:pointer;border-radius:10px;padding:11px 20px;font-weight:700;font-size:13px;border:1px solid var(--line);background:var(--bg2);color:var(--text)}
+.wz .btn.primary{background:var(--accent,#37e6a4);color:#04130c;border-color:transparent}
+.wz .btn:disabled{opacity:.5;cursor:not-allowed}
+.wz-busy{font-size:12px;color:var(--accent);margin-top:8px}
+</style>
+
+<div class="wz-back" id="wizard" onclick="if(event.target===this)closeWizard()">
+  <div class="wz">
+    <div class="wz-head">
+      <div class="wz-title" id="wz-title">Start a new model</div>
+      <button class="wz-x" onclick="closeWizard()">✕</button>
+    </div>
+    <div class="wz-steps">
+      <div class="wz-step on" data-s="1"></div>
+      <div class="wz-step" data-s="2"></div>
+      <div class="wz-step" data-s="3"></div>
+    </div>
+
+    <!-- SCREEN 1: engine -->
+    <div class="wz-screen on" data-screen="1">
+      <div class="wz-cards">
+        <div class="wz-card" data-engine="hunyuan21" onclick="wzPickEngine('hunyuan21',this)">
+          <h3>Single-view Hunyuan</h3>
+          <p>One image → 3D. Generate from a prompt or upload one image (the clean
+             grey render is ideal). Fast. Front is faithful, the back is inferred.</p>
+          <span class="tag">hunyuan21 · octree 384</span>
+        </div>
+        <div class="wz-card" data-engine="hunyuan2mv" onclick="wzPickEngine('hunyuan2mv',this)">
+          <h3>Multi-view Hunyuan</h3>
+          <p>Front + Left + Back (or a turntable GIF) → 3D. The occluded sides are
+             real data — accurate in the round. Best for tabletop minis.</p>
+          <span class="tag">hunyuan2mv · 3 views</span>
+        </div>
+      </div>
+      <div class="wz-foot">
+        <span></span>
+        <button class="btn primary" id="wz-next1" disabled onclick="wzGoto(2)">Next →</button>
+      </div>
+    </div>
+
+    <!-- SCREEN 2: input -->
+    <div class="wz-screen" data-screen="2">
+      <!-- SINGLE-VIEW input -->
+      <div id="wz-single">
+        <div class="wz-tabs">
+          <div class="wz-tab on" data-mode="prompt" onclick="wzMode('prompt',this)">Prompt first</div>
+          <div class="wz-tab" data-mode="upload" onclick="wzMode('upload',this)">Upload image</div>
+        </div>
+        <div class="wz-panel on" data-mode="prompt">
+          <textarea id="wz-prompt" placeholder="e.g. a heroic knight in plate armor, greatsword planted point-down, fantasy miniature, round base"></textarea>
+          <div class="wz-row" style="margin-top:10px">
+            <label>Kind
+              <select id="wz-kind"><option value="mini">Miniature</option>
+                <option value="prop">Prop</option><option value="terrain">Terrain</option></select></label>
+            <label>Printer
+              <select id="wz-printer"><option value="resin">Resin</option><option value="fdm">FDM</option></select></label>
+            <button class="btn" style="align-self:flex-end" id="wz-gen" onclick="wzGenConcept()">Generate image</button>
+          </div>
+          <div class="wz-busy" id="wz-genbusy" style="display:none">generating concept…</div>
+          <div class="wz-drop" id="wz-concept-prev" style="display:none;margin-top:12px"></div>
+          <div class="wz-row" id="wz-concept-actions" style="display:none;margin-top:12px">
+            <button class="btn" onclick="wzGenConcept()">↻ Retry</button>
+            <button class="btn primary" onclick="wzContinueConcept()">Continue →</button>
+          </div>
+        </div>
+        <div class="wz-panel" data-mode="upload">
+          <div class="wz-drop" id="wz-single-drop" onclick="wzPick('single')">
+            <span>Drop or click — one image of your subject<br>(the clean grey render is ideal)</span>
+          </div>
+          <div class="wz-foot">
+            <button class="btn" onclick="wzGoto(1)">← Back</button>
+            <button class="btn primary" id="wz-single-next" disabled onclick="wzGoto(3)">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- MULTI-VIEW input -->
+      <div id="wz-multi" style="display:none">
+        <div class="wz-tabs">
+          <div class="wz-tab on" data-mvmode="views" onclick="wzMvMode('views',this)">3 views</div>
+          <div class="wz-tab" data-mvmode="gif" onclick="wzMvMode('gif',this)">Turntable GIF</div>
+        </div>
+        <div class="wz-panel on" data-mvmode="views">
+          <div class="wz-views">
+            <div class="wz-drop" onclick="wzPick('front')"><span class="wz-vlabel">FRONT</span><span>drop front view</span></div>
+            <div class="wz-drop" onclick="wzPick('left')"><span class="wz-vlabel">LEFT</span><span>drop left view</span></div>
+            <div class="wz-drop" onclick="wzPick('back')"><span class="wz-vlabel">BACK</span><span>drop back view</span></div>
+          </div>
+          <div class="wz-hint">Same subject, clean background, consistent lighting. These are the exact 3 views the model wants.</div>
+        </div>
+        <div class="wz-panel" data-mvmode="gif">
+          <div class="wz-drop" id="wz-gif-drop" onclick="wzPick('gif')">
+            <span>Drop or click — a spinning turntable GIF / video<br>(front, left, back auto-extracted at 0° / 90° / 180°)</span>
+          </div>
+          <label style="font-size:11px;color:var(--dim2);display:flex;gap:7px;align-items:center;margin-top:10px">
+            <input type="checkbox" id="wz-reverse" style="width:auto"> object spins clockwise (swap left)</label>
+        </div>
+        <div class="wz-row" style="margin-top:12px">
+          <label>Kind <select id="wz-kind2"><option value="mini">Miniature</option>
+            <option value="prop">Prop</option></select></label>
+          <label>Printer <select id="wz-printer2"><option value="resin">Resin</option><option value="fdm">FDM</option></select></label>
+        </div>
+        <div class="wz-foot">
+          <button class="btn" onclick="wzGoto(1)">← Back</button>
+          <button class="btn primary" id="wz-multi-next" disabled onclick="wzGoto(3)">Next →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCREEN 3: confirm -->
+    <div class="wz-screen" data-screen="3">
+      <div class="wz-summary" id="wz-summary"></div>
+      <div class="wz-foot">
+        <button class="btn" onclick="wzGoto(2)">← Back</button>
+        <button class="btn primary" id="wz-start" onclick="wzStart()">🚀 Start modelling</button>
+      </div>
+    </div>
+  </div>
+</div>
+<input type="file" id="wz-file" accept="image/*,image/gif,video/*" style="display:none">
+
+<script>
+// ── NEW-RUN WIZARD state machine ─────────────────────────────────────
+const WZ = { engine:null, mode:'prompt', mvmode:'views', screen:1,
+  conceptPath:null, single:null, mv:{front:null,left:null,back:null,gif:null},
+  _pickTarget:null };
+
+function openWizard(){ wzReset(); document.getElementById('wizard').classList.add('open'); }
+function closeWizard(){ document.getElementById('wizard').classList.remove('open'); }
+function wzReset(){
+  WZ.engine=null; WZ.mode='prompt'; WZ.mvmode='views'; WZ.conceptPath=null;
+  WZ.single=null; WZ.mv={front:null,left:null,back:null,gif:null};
+  document.querySelectorAll('.wz-card').forEach(c=>c.classList.remove('sel'));
+  document.getElementById('wz-next1').disabled=true;
+  document.getElementById('wz-concept-prev').style.display='none';
+  document.getElementById('wz-concept-actions').style.display='none';
+  document.querySelectorAll('.wz-drop img').forEach(i=>i.remove());
+  wzGoto(1);
+}
+function wzGoto(s){
+  WZ.screen=s;
+  document.querySelectorAll('.wz-screen').forEach(el=>el.classList.toggle('on', +el.dataset.screen===s));
+  document.querySelectorAll('.wz-step').forEach(el=>el.classList.toggle('on', +el.dataset.s<=s));
+  // screen 2 shows single vs multi panel
+  if(s===2){
+    const single = WZ.engine==='hunyuan21';
+    document.getElementById('wz-single').style.display = single?'block':'none';
+    document.getElementById('wz-multi').style.display  = single?'none':'block';
+  }
+  if(s===3) wzBuildSummary();
+}
+function wzPickEngine(eng,card){
+  WZ.engine=eng;
+  document.querySelectorAll('.wz-card').forEach(c=>c.classList.remove('sel'));
+  card.classList.add('sel');
+  document.getElementById('wz-next1').disabled=false;
+}
+function wzMode(m,tab){ WZ.mode=m;
+  document.querySelectorAll('#wz-single .wz-tab').forEach(t=>t.classList.toggle('on',t===tab));
+  document.querySelectorAll('#wz-single .wz-panel').forEach(p=>p.classList.toggle('on',p.dataset.mode===m));
+}
+function wzMvMode(m,tab){ WZ.mvmode=m;
+  document.querySelectorAll('#wz-multi .wz-tab').forEach(t=>t.classList.toggle('on',t===tab));
+  document.querySelectorAll('#wz-multi .wz-panel').forEach(p=>p.classList.toggle('on',p.dataset.mvmode===m));
+  wzCheckMulti();
+}
+// file picking
+function wzPick(target){ WZ._pickTarget=target; document.getElementById('wz-file').click(); }
+document.getElementById('wz-file').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const fr=new FileReader();
+  fr.onload=ev=>{ wzSetFile(WZ._pickTarget, ev.target.result); };
+  fr.readAsDataURL(f); e.target.value='';
+});
+function wzSetFile(target,dataUrl){
+  if(target==='single'){ WZ.single=dataUrl; wzThumb('wz-single-drop',dataUrl);
+    document.getElementById('wz-single-next').disabled=false; }
+  else { WZ.mv[target]=dataUrl;
+    // find the drop that triggered — match by view label / id
+    if(target==='gif'){ wzThumb('wz-gif-drop',dataUrl); }
+    else { wzThumbView(target,dataUrl); }
+    wzCheckMulti(); }
+}
+function wzThumb(id,dataUrl){ const d=document.getElementById(id);
+  d.querySelectorAll('img').forEach(i=>i.remove());
+  const im=new Image(); im.src=dataUrl; d.appendChild(im); }
+function wzThumbView(view,dataUrl){
+  const drops=[...document.querySelectorAll('#wz-multi [data-mvmode="views"] .wz-drop')];
+  const map={front:0,left:1,back:2}; const d=drops[map[view]];
+  d.querySelectorAll('img').forEach(i=>i.remove());
+  const im=new Image(); im.src=dataUrl; d.appendChild(im);
+}
+function wzCheckMulti(){
+  const ok = WZ.mvmode==='gif' ? !!WZ.mv.gif
+    : (WZ.mv.front && WZ.mv.left && WZ.mv.back);
+  document.getElementById('wz-multi-next').disabled=!ok;
+}
+// concept generation (single-view prompt-first)
+async function wzGenConcept(){
+  const prompt=document.getElementById('wz-prompt').value.trim();
+  if(!prompt){ toast('Enter a prompt first','err'); return; }
+  document.getElementById('wz-genbusy').style.display='block';
+  document.getElementById('wz-concept-actions').style.display='none';
+  try{
+    const kind=document.getElementById('wz-kind').value;
+    const r=await fetch('/api/concept',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({prompt,kind,seed:Math.floor(Math.random()*1e6)})}).then(r=>r.json());
+    if(!r.ok){ toast('Concept failed: '+(r.error||''),'err'); return; }
+    WZ.conceptPath=r.path;
+    const d=document.getElementById('wz-concept-prev'); d.style.display='flex';
+    d.querySelectorAll('img').forEach(i=>i.remove());
+    const im=new Image(); im.src=r.image+'?t='+Date.now(); d.appendChild(im);
+    document.getElementById('wz-concept-actions').style.display='flex';
+  } catch(e){ toast('Server error','err'); }
+  finally{ document.getElementById('wz-genbusy').style.display='none'; }
+}
+function wzContinueConcept(){ if(!WZ.conceptPath){ toast('Generate an image first','err'); return; } wzGoto(3); }
+
+function wzBuildSummary(){
+  const single = WZ.engine==='hunyuan21';
+  const kind = single ? document.getElementById('wz-kind').value
+                      : document.getElementById('wz-kind2').value;
+  let inp;
+  if(single){ inp = WZ.mode==='prompt'
+    ? `prompt → concept image (${WZ.conceptPath?'ready':'—'})`
+    : (WZ.single?'uploaded image':'—'); }
+  else { inp = WZ.mvmode==='gif' ? (WZ.mv.gif?'turntable GIF':'—')
+    : `front/left/back (${['front','left','back'].filter(v=>WZ.mv[v]).length}/3)`; }
+  document.getElementById('wz-summary').innerHTML =
+    `<div>Engine: <b>${single?'Single-view Hunyuan':'Multi-view Hunyuan'}</b></div>`
+    +`<div>Input: <b>${inp}</b></div>`
+    +`<div>Kind: <b>${kind}</b> · Output at statue scale (downsize in slicer)</div>`
+    +`<div class="wz-hint">Validated against Bambu + PrusaSlicer before it's marked done.</div>`;
+}
+async function wzStart(){
+  const single = WZ.engine==='hunyuan21';
+  let body;
+  if(single){
+    const kind=document.getElementById('wz-kind').value;
+    const printer=document.getElementById('wz-printer').value;
+    if(WZ.mode==='prompt'){
+      if(!WZ.conceptPath){ toast('Generate an image first','err'); return; }
+      body={engine:'hunyuan21',kind,printer,prompt:document.getElementById('wz-prompt').value.trim(),
+        input_image_path:WZ.conceptPath};
+    } else {
+      if(!WZ.single){ toast('Upload an image','err'); return; }
+      body={engine:'hunyuan21',kind,printer,prompt:'uploaded subject',
+        concept_image_data_url:WZ.single};
+    }
+  } else {
+    const kind=document.getElementById('wz-kind2').value;
+    const printer=document.getElementById('wz-printer2').value;
+    body={engine:'hunyuan2mv',kind,printer,prompt:'multiview subject',
+      mv_reverse:document.getElementById('wz-reverse').checked};
+    if(WZ.mvmode==='gif') body.mv_gif_data=WZ.mv.gif;
+    else { body.mv_front_data=WZ.mv.front; body.mv_left_data=WZ.mv.left; body.mv_back_data=WZ.mv.back; }
+  }
+  const btn=document.getElementById('wz-start'); btn.disabled=true; btn.textContent='Starting…';
+  try{
+    const r=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)}).then(r=>r.json());
+    if(r.ok){ toast('Modelling started · PID '+r.pid,'ok'); closeWizard();
+      if(typeof clearPreviewForNewRun==='function') clearPreviewForNewRun();
+      if(typeof refresh==='function') refresh(); }
+    else toast('Launch failed: '+(r.error||''),'err');
+  } catch(e){ toast('Server error','err'); }
+  finally{ btn.disabled=false; btn.textContent='🚀 Start modelling'; }
+}
+</script>
+
+<!-- ═════ NEW RUN MODAL ═════ -->
+<div class="modal-backdrop" id="new-modal" onclick="if(event.target===this)closeNewModal()">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <h2><svg class="ico ico-lg"><use href="#i-rocket"/></svg>New Pipeline Run</h2>
+      <button class="modal-x" onclick="closeNewModal()" aria-label="Close">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <!-- LEFT: prompt + images -->
+      <div>
+        <div class="nm-section">
+          <h3>Prompt</h3>
+          <textarea class="nm-prompt" id="nm-prompt"
+            placeholder="Describe the terrain piece or miniature you want to print&#10;e.g. ancient dwarven shrine with crumbling stone pillars and rune-carved altar"></textarea>
+        </div>
+
+        <div class="nm-section">
+          <h3>Reference Images <span style="color:var(--dim3);text-transform:none;
+            font-weight:500;letter-spacing:0;font-size:10px">— optional, drop or click to upload</span></h3>
+          <div class="nm-drop" id="nm-drop"
+            onclick="document.getElementById('nm-files').click()"
+            ondragover="event.preventDefault();this.classList.add('drag')"
+            ondragleave="this.classList.remove('drag')"
+            ondrop="event.preventDefault();this.classList.remove('drag');handleDrop(event)">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            <b>Drop images here or click to browse</b>
+            <span>PNG/JPG · up to 4 views (front, right, back, left)</span>
+          </div>
+          <input id="nm-files" type="file" multiple accept="image/png,image/jpeg" style="display:none"
+            onchange="handleFiles(event.target.files)"/>
+          <div class="nm-thumbs" id="nm-thumbs"></div>
+        </div>
+
+        <div class="nm-section">
+          <h3>Parameters</h3>
+          <div class="nm-row">
+            <label>Kind
+              <select id="nm-kind">
+                <option value="terrain">Terrain</option>
+                <option value="mini">Miniature (32mm)</option>
+                <option value="prop">Prop</option>
+                <option value="scatter">Scatter</option>
+              </select></label>
+            <label>Engine
+              <select id="nm-engine">
+                <option value="auto">Auto (smart route)</option>
+                <option value="parametric">Parametric CAD (terrain — watertight)</option>
+                <option value="hunyuan21">Hunyuan3D 2.1 (minis / organic)</option>
+                <option value="triposg">TripoSG (fast neural)</option>
+                <option value="hunyuan">Hunyuan3D 2.0 (legacy)</option>
+                <option value="pixal3d">Pixal3D (textured render)</option>
+              </select></label>
+          </div>
+          <div class="nm-row">
+            <label>Printer
+              <select id="nm-printer">
+                <option value="resin">Resin (mini detail)</option>
+                <option value="fdm">FDM (decimate)</option>
+              </select></label>
+            <label>Seed
+              <input id="nm-seed" type="number" placeholder="random (any integer)"/></label>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: pipeline diagram + modular toggles -->
+      <div>
+        <div class="nm-section">
+          <h3>Pipeline (click to toggle optional stages)</h3>
+          <div class="nm-pipeline" id="nm-pipeline">
+            <div class="nm-stage"><div class="nm-st-no">1</div>
+              <div><div class="nm-st-name">Concept Generation</div>
+                <div class="nm-st-desc">RealVisXL v5 / DreamShaper / FLUX — generates 1024×1024 image from prompt. Auto-picks best model for kind.</div>
+              </div></div>
+            <div class="nm-stage"><div class="nm-st-no">2</div>
+              <div><div class="nm-st-name">Background Removal</div>
+                <div class="nm-st-desc">rembg/u2net cuts the subject onto pure white. Required for HY3D's alpha-matte input.</div>
+              </div></div>
+            <div class="nm-stage toggleable on" id="nm-toggle-mv"
+              onclick="toggleMv(this)" data-engine="zero123">
+              <div class="nm-st-no">3</div>
+              <div><div class="nm-st-name">Multi-view Expansion</div>
+                <div class="nm-st-desc" id="nm-mv-desc">Zero123++ generates 4 side views. Disable for complex scenes — single-view often gives sharper detail.</div>
+              </div></div>
+            <div class="nm-stage"><div class="nm-st-no">4</div>
+              <div><div class="nm-st-name">3D Mesh (Hunyuan3D)</div>
+                <div class="nm-st-desc">Octree 512, CFG 7.5, 50 diffusion steps. Multi-view mode if step 3 produced ≥1 side image.</div>
+              </div></div>
+            <div class="nm-stage"><div class="nm-st-no">5</div>
+              <div><div class="nm-st-name">Blender Cleanup</div>
+                <div class="nm-st-desc">Loose-parts filter, voxel remesh SHARP, Taubin smooth, baseplate trim, iterative manifold repair.</div>
+              </div></div>
+            <div class="nm-stage"><div class="nm-st-no">6</div>
+              <div><div class="nm-st-name">STL Export + Orientation</div>
+                <div class="nm-st-desc">Scale to target dim, slicer-ready binary STL + print.json with support-orientation advisory.</div>
+              </div></div>
+          </div>
+        </div>
+
+        <div class="nm-section" style="margin-bottom:0">
+          <h3>MV Engine</h3>
+          <div class="nm-row" style="grid-template-columns:repeat(3,1fr)">
+            <label style="cursor:pointer">
+              <input type="radio" name="nm-mv-engine" value="zero123" checked
+                style="width:auto;margin-right:6px;vertical-align:middle"/>Zero123++</label>
+            <label style="cursor:pointer">
+              <input type="radio" name="nm-mv-engine" value="mvadapter"
+                style="width:auto;margin-right:6px;vertical-align:middle"/>MV-Adapter</label>
+            <label style="cursor:pointer">
+              <input type="radio" name="nm-mv-engine" value="single"
+                style="width:auto;margin-right:6px;vertical-align:middle"/>Single-view</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <div style="font-size:11px;color:var(--dim2)">
+        <span id="nm-estimated">~35 min total</span> · estimated end-to-end time
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="closeNewModal()">Cancel</button>
+        <button class="btn primary" onclick="submitNewRun()" id="nm-submit">
+          <svg class="ico ico-lg"><use href="#i-rocket"/></svg>Launch Pipeline</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── THREE.JS ────────────────────────────────────────────────────── -->
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader }    from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+let renderer, scene, camera, controls, model, lastGlb = null;
+let wireOn = false, autoRot = false;
+
+function init(){
+  const cv = document.getElementById('pv-canvas');
+  if(!cv || renderer) return;
+  const wrap = document.getElementById('pv-3d');
+  renderer = new THREE.WebGLRenderer({canvas:cv, antialias:true, alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0F172A);
+  camera = new THREE.PerspectiveCamera(38, 1.6, .01, 100);
+  camera.position.set(1.7, 1.3, 1.7);
+  scene.add(new THREE.AmbientLight(0xffffff, .6));
+  const k = new THREE.DirectionalLight(0xffffff, 1.3); k.position.set(3,6,4); scene.add(k);
+  const f = new THREE.DirectionalLight(0xffffff, .5); f.position.set(-3,2,-3); scene.add(f);
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.dampingFactor = .08;
+  controls.autoRotate = false; controls.autoRotateSpeed = 1.0;
+  controls.minDistance = .5; controls.maxDistance = 12;
+  (function tick(){
+    requestAnimationFrame(tick);
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    if(cv.width !== w || cv.height !== h){
+      renderer.setSize(w, h, false);
+      camera.aspect = w/h; camera.updateProjectionMatrix();
+    }
+    controls.update();
+    renderer.render(scene, camera);
+  })();
+}
+
+function loadGlb(name){
+  if(name === lastGlb) return;
+  lastGlb = name;
+  init();
+  if(model){ scene.remove(model); model = null; }
+  document.getElementById('pv-3d-empty').textContent = 'Loading…';
+  document.getElementById('pv-3d-empty').style.display = 'grid';
+  new GLTFLoader().load('/api/mesh/' + encodeURIComponent(name), gltf => {
+    model = gltf.scene;
+    const box = new THREE.Box3().setFromObject(model);
+    const c = box.getCenter(new THREE.Vector3());
+    const s = box.getSize(new THREE.Vector3());
+    const m = Math.max(s.x, s.y, s.z);
+    model.position.sub(c);
+    model.scale.setScalar(1.7 / m);
+    const box2 = new THREE.Box3().setFromObject(model);
+    model.position.y -= box2.min.y;
+    scene.add(model);
+    controls.target.set(0, s.y / m * 0.4, 0);
+    document.getElementById('pv-3d-empty').style.display = 'none';
+    document.getElementById('v-ctrl').style.display = 'flex';
+    // After load, render a top-down snapshot and stash for the strip
+    setTimeout(() => {
+      try {
+        const off = new THREE.PerspectiveCamera(38, 1, .01, 100);
+        off.position.set(0.01, 3.2, 0);
+        off.lookAt(0, 0, 0);
+        const w = 160, h = 160;
+        renderer.setSize(w, h, false);
+        renderer.render(scene, off);
+        const url = renderer.domElement.toDataURL('image/png');
+        window._topRender = url;
+        // Restore viewport
+        const wrap = document.getElementById('pv-3d');
+        renderer.setSize(wrap.clientWidth, wrap.clientHeight, false);
+        camera.aspect = wrap.clientWidth / wrap.clientHeight;
+        camera.updateProjectionMatrix();
+      } catch (e) { console.warn('top render fail', e); }
+    }, 800);
+  }, null, err => {
+    document.getElementById('pv-3d-empty').textContent = 'Load failed';
+  });
+}
+function toggleSpin(){ if(!controls) return;
+  controls.autoRotate = !controls.autoRotate;
+  document.getElementById('v-spin').classList.toggle('on', controls.autoRotate); }
+function toggleWire(){ if(!model) return;
+  wireOn = !wireOn;
+  model.traverse(c => { if(c.isMesh) c.material.wireframe = wireOn; });
+  document.getElementById('v-wire').classList.toggle('on', wireOn); }
+function doFit(){ if(!model || !camera) return;
+  const box = new THREE.Box3().setFromObject(model);
+  const sph = box.getBoundingSphere(new THREE.Sphere());
+  const dist = sph.radius * 2.5 / Math.tan(Math.PI * camera.fov / 360);
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  camera.position.copy(dir.multiplyScalar(dist).add(sph.center));
+  controls.target.copy(sph.center); }
+
+window._v = { loadGlb, toggleSpin, toggleWire, doFit };
+</script>
+
+<!-- ── MAIN APP ───────────────────────────────────────────────────── -->
+<script>
+function vSpin(){ window._v?.toggleSpin(); }
+function vWire(){ window._v?.toggleWire(); }
+function vFit(){  window._v?.doFit(); }
+
+function toast(m, t='ok'){
+  const w = document.getElementById('toasts');
+  const e = document.createElement('div'); e.className = 'toast ' + t; e.textContent = m;
+  w.appendChild(e); setTimeout(() => e.remove(), 3500);
+}
+
+function setTab(t){
+  document.getElementById('pv-2d').style.display = t==='2d' ? '' : 'none';
+  document.getElementById('pv-3d').style.display = t==='3d' ? '' : 'none';
+  document.getElementById('tab-2d').classList.toggle('active', t==='2d');
+  document.getElementById('tab-3d').classList.toggle('active', t==='3d');
+}
+
+async function launchRun(opts){
+  // Accept opts from the modal OR fall back to hidden form fields
+  let body;
+  if(opts && opts.prompt){
+    body = opts;
+  } else {
+    const prompt = document.getElementById('f-prompt').value.trim();
+    if(!prompt){ toast('Enter a prompt first', 'err'); return; }
+    body = {prompt,
+      kind:    document.getElementById('f-kind').value,
+      engine:  document.getElementById('f-engine').value,
+      printer: document.getElementById('f-printer').value};
+    const s = document.getElementById('f-seed').value;
+    if(s) body.seed = parseInt(s);
+  }
+  try{
+    const r = await fetch('/api/run', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const d = await r.json();
+    if(d.ok) toast(`Pipeline started · PID ${d.pid}`, 'ok');
+    else toast('Launch failed: ' + d.error, 'err');
+    return d;
+  } catch{ toast('Server error', 'err'); return null; }
+}
+
+// ── NEW MODAL ───────────────────────────────────────────────────────
+function openNewModal(){
+  document.getElementById('new-modal').classList.add('open');
+  // Pre-fill from any previous selection
+  const last = document.getElementById('f-prompt').value;
+  if(last) document.getElementById('nm-prompt').value = last;
+}
+function closeNewModal(){
+  document.getElementById('new-modal').classList.remove('open');
+}
+
+let _nmFiles = [];   // {file, dataUrl, slot} for uploaded reference images
+const NM_SLOTS = ['front','right','back','left'];
+
+function handleFiles(files){
+  for(const f of files){
+    if(_nmFiles.length >= 4) break;
+    const fr = new FileReader();
+    fr.onload = e => {
+      _nmFiles.push({ file: f, dataUrl: e.target.result,
+                      slot: NM_SLOTS[_nmFiles.length-1] || 'extra' });
+      renderThumbs();
+    };
+    fr.readAsDataURL(f);
+  }
+}
+function handleDrop(ev){
+  if(ev.dataTransfer && ev.dataTransfer.files) handleFiles(ev.dataTransfer.files);
+}
+function renderThumbs(){
+  const el = document.getElementById('nm-thumbs');
+  el.innerHTML = _nmFiles.map((f, i) => {
+    const lbl = NM_SLOTS[i] || 'extra';
+    return `<div class="nm-thumb" title="${f.file.name}">
+      <span class="nm-th-lbl">${lbl}</span>
+      <img src="${f.dataUrl}"/>
+      <span class="nm-th-x" onclick="removeNmFile(${i})">×</span>
+    </div>`;
+  }).join('');
+}
+function removeNmFile(i){
+  _nmFiles.splice(i, 1);
+  renderThumbs();
+}
+
+// MV engine radio selector — also reflected in the pipeline diagram
+document.addEventListener('change', e => {
+  if(e.target.name === 'nm-mv-engine'){
+    const engine = e.target.value;
+    const stage3 = document.getElementById('nm-toggle-mv');
+    const desc   = document.getElementById('nm-mv-desc');
+    stage3.classList.toggle('on', engine !== 'single');
+    stage3.dataset.engine = engine;
+    if(engine === 'mvadapter') desc.textContent =
+      'MV-Adapter generates 6 consistent views at azimuth 0°,45°,90°,180°,270°,315°. Better for complex multi-element scenes.';
+    else if(engine === 'zero123') desc.textContent =
+      'Zero123++ generates 6 views via novel-view diffusion. Good for simple objects.';
+    else desc.textContent =
+      'Skip multi-view: feed only the single concept image into HY3D. Highest detail preservation for complex scenes.';
+    // Update ETA
+    const eta = engine === 'single' ? '~28 min' : '~32 min';
+    document.getElementById('nm-estimated').textContent = eta + ' total';
+  }
+});
+
+function toggleMv(el){
+  // Click the stage to cycle through mv engines
+  const cur = el.dataset.engine;
+  const next = cur === 'single' ? 'zero123' :
+               cur === 'zero123' ? 'mvadapter' : 'single';
+  document.querySelector(`input[name="nm-mv-engine"][value="${next}"]`).checked = true;
+  document.querySelector(`input[name="nm-mv-engine"][value="${next}"]`)
+    .dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+async function submitNewRun(){
+  const prompt = document.getElementById('nm-prompt').value.trim();
+  // Either a prompt OR an uploaded image is required
+  if(!prompt && _nmFiles.length === 0){
+    toast('Enter a prompt or drop a reference image', 'err'); return;
+  }
+  const mvEngine = document.querySelector('input[name="nm-mv-engine"]:checked').value;
+  const body = {
+    prompt: prompt || '(user-provided image)',
+    kind:    document.getElementById('nm-kind').value,
+    engine:  document.getElementById('nm-engine').value,
+    printer: document.getElementById('nm-printer').value,
+    mv_engine: mvEngine,
+  };
+  const seed = document.getElementById('nm-seed').value;
+  if(seed) body.seed = parseInt(seed);
+  // Send the first uploaded image as the concept_image_data_url. Server
+  // saves it, orchestrate.py picks it up via --input-image and skips
+  // concept generation, going straight into the multi-view stage.
+  if(_nmFiles.length){
+    body.concept_image_data_url = _nmFiles[0].dataUrl;
+    toast(`Using your uploaded image as the concept (${_nmFiles[0].file.name})`, 'ok');
+  }
+  const btn = document.getElementById('nm-submit');
+  btn.disabled = true; btn.style.opacity = .6;
+  // Snapshot the prompt + uploaded image BEFORE we clear _nmFiles below
+  const launchPrompt = body.prompt;
+  const launchImageDataUrl = _nmFiles.length ? _nmFiles[0].dataUrl : null;
+  const r = await launchRun(body);
+  if(r && r.ok){
+    closeNewModal();
+    document.getElementById('nm-prompt').value = '';
+    _nmFiles = []; renderThumbs();
+    // Immediately swap the main view to the new run: clear the old preview
+    // (image, mv-strip, 3D mesh) and show the prompt + uploaded image as a
+    // pre-disk placeholder until the server picks up the new concept file.
+    clearPreviewForNewRun();
+    showPendingNewRun(launchPrompt, launchImageDataUrl);
+    // Force an immediate poll so we don't wait the full 2s interval.
+    refresh();
+  }
+  setTimeout(() => { btn.disabled = false; btn.style.opacity = 1; }, 1500);
+}
+async function killRun(){
+  try{ await fetch('/api/kill', {method:'POST'}); toast('Pipeline stopped'); }
+  catch{ toast('Server error', 'err'); }
+}
+
+function fmtTime(s){ if(!s || s<=0) return '0s';
+  if(s<60) return s+'s';
+  const m=Math.floor(s/60), r=s%60; return m+'m'+(r?' '+r+'s':''); }
+function fmtGB(mb){ return (mb/1024).toFixed(1)+' GB'; }
+
+// ── System (CPU + RAM) monitor ─────────────────────────────────────
+let _sysHash = '';
+function updSys(s){
+  if(!s) return;
+  const hash = `${s.cpu_util}|${s.ram_used_mb}|${s.ram_total_mb}|${s.loadavg?s.loadavg[0].toFixed(2):0}|${s.uptime_s}|${s.cpu_cores}`;
+  if(hash === _sysHash) return;
+  _sysHash = hash;
+  const circ = 2 * Math.PI * 60;
+  const ring = document.getElementById('ring-cpu');
+  if(ring){
+    ring.style.strokeDashoffset = circ * (1 - s.cpu_util/100);
+    ring.style.stroke = s.cpu_util>90 ? 'var(--err)' :
+                        s.cpu_util>70 ? 'var(--warn)' : 'var(--info)';
+  }
+  const cv = document.getElementById('cpu-val');
+  if(cv){
+    cv.textContent = s.cpu_util+'%';
+    cv.style.color = s.cpu_util>90?'var(--err)':s.cpu_util>70?'var(--warn)':'var(--text)';
+  }
+  // RAM
+  const ramPct = s.ram_total_mb ? (s.ram_used_mb / s.ram_total_mb * 100) : 0;
+  document.getElementById('ram-txt').textContent =
+    (s.ram_used_mb/1024).toFixed(1)+' / '+(s.ram_total_mb/1024).toFixed(1)+' GB';
+  document.getElementById('ram-bar').style.width = ramPct.toFixed(0)+'%';
+  // Load avg (1m)
+  const load1 = s.loadavg && s.loadavg[0] ? s.loadavg[0] : s.cpu_util/100;
+  const loadPct = Math.min(100, (load1 / Math.max(1, s.cpu_cores)) * 100);
+  document.getElementById('load-txt').textContent = load1.toFixed(2);
+  document.getElementById('load-bar').style.width = loadPct.toFixed(0)+'%';
+  // Stats
+  document.getElementById('cpu-cores').textContent = s.cpu_cores;
+  const up = s.uptime_s||0;
+  const uph = Math.floor(up/3600), upm = Math.floor((up%3600)/60);
+  document.getElementById('cpu-uptime').textContent = uph+'h '+upm+'m';
+  document.getElementById('cpu-model').textContent = s.cpu_model || '—';
+}
+
+// ── GPU ────────────────────────────────────────────────────────────
+let _gpuHash = '';
+function updGpu(g){
+  const hash = `${g.util}|${g.mem_used}|${g.mem_total}|${g.temp}`;
+  if(hash === _gpuHash) return;
+  _gpuHash = hash;
+  const u = g.util, used = g.mem_used, tot = g.mem_total, t = g.temp;
+  const circ = 2 * Math.PI * 60;
+  const ring = document.getElementById('ring-fill');
+  ring.style.strokeDashoffset = circ * (1 - u/100);
+  ring.style.stroke = u>90 ? 'var(--err)' : u>70 ? 'var(--warn)' : 'var(--accent)';
+  document.getElementById('ring-val').textContent = u+'%';
+  document.getElementById('vram-txt').textContent = fmtGB(used)+' / '+fmtGB(tot);
+  document.getElementById('vram-bar').style.width = (used/tot*100).toFixed(0)+'%';
+  document.getElementById('temp-txt').textContent = t+'°C';
+  document.getElementById('temp-bar').style.width = Math.min(t,100)+'%';
+  document.getElementById('s-free').textContent = fmtGB(tot-used);
+  document.getElementById('s-used').textContent = fmtGB(used);
+  document.getElementById('g-util').textContent = u+'%';
+  document.getElementById('g-vram').textContent = fmtGB(used);
+  document.getElementById('g-temp').textContent = t+'°C';
+  document.getElementById('chip-gpu').className  = 'chip' + (u>90?' err':u>70?' warn':u>10?' live':'');
+  document.getElementById('chip-vram').className = 'chip' + ((used/tot)>0.85?' warn':'');
+  document.getElementById('chip-temp').className = 'chip' + (t>80?' err':t>70?' warn':'');
+}
+
+// ── Pipeline timeline ──────────────────────────────────────────────
+// 9-step timeline. Server stages map to multiple steps depending on substep text.
+// concept stage covers: 0 (Concept), 1 (Refine)
+// bg_removal: 2
+// multiview: 3 (4 Views), 4 (Upscale), 5 (Fix + Top)
+// mesh: 6
+// blender: 7 (Cleanup), 8 also when detail_enhance shows
+// done: marks 8 complete
+const STEP_EST  = ['~30s','~18s','~6s','~40s','~60s','~60s','~28 min','~3 min','ready'];
+
+function mapStageSubstepToStep(stage, substep){
+  const s = (substep || '').toLowerCase();
+  if(stage === 'concept'){
+    if(s.includes('refiner') || s.includes('refining concept') || s.includes('sharpening')) return 1;
+    return 0;
+  }
+  if(stage === 'bg_removal') return 2;
+  if(stage === 'multiview'){
+    if(s.includes('upscaling') || s.includes('upscale')) return 4;
+    if(s.includes('fixing') || s.includes('view-fix') || s.includes('top view') || s.includes('synthesized')) return 5;
+    return 3;
+  }
+  if(stage === 'mesh') return 6;
+  if(stage === 'blender'){
+    if(s.includes('pymeshlab') || s.includes('detail') || s.includes('unsharp')) return 8;
+    return 7;
+  }
+  if(stage === 'done') return 8;
+  return -1;
+}
+
+function setStepState(idx, state /* idle|active|done */){
+  const el = document.querySelector(`.step[data-step="${idx}"]`);
+  if(!el) return;
+  el.classList.remove('active','done');
+  if(state==='active') el.classList.add('active');
+  if(state==='done')   el.classList.add('done');
+}
+function setStepSub(idx, text){
+  const el = document.querySelector(`.step-sub[data-sub="${idx}"]`);
+  if(el) el.textContent = text;
+}
+
+let _wasActive = false;
+let _lastGlb = null;
+
+let _pipelineStructHash = '';   // rebuilds the heavy stuff (mv-strip, badges, image)
+let _pipelineProgHash   = '';   // light updates (pct, eta, substep text)
+let _lastSeenRunId      = null; // tracks run_id changes so we can flush stale UI
+let _pendingNewRun      = null; // {prompt, imageDataUrl, ts} shown until disk catches up
+
+// Wipe stale preview when switching to a new run (or starting one).
+// Called from submitNewRun (immediate) AND updPipeline (when cur.run_id changes).
+function clearPreviewForNewRun(){
+  const img = document.getElementById('pv-img');
+  if(img){ img.src = ''; img.style.display = 'none'; }
+  const empty = document.getElementById('pv-2d-empty');
+  if(empty){ empty.style.display = 'grid'; empty.textContent = 'No concept image yet'; }
+  const strip = document.getElementById('mv-strip');
+  if(strip){ strip.innerHTML = ''; strip.style.display = 'none'; }
+  document.getElementById('pv-name').textContent = '—';
+  document.getElementById('pv-dim').textContent  = '—';
+  _lastGlb     = null;
+  _topRender   = null;
+  _viewingRunId= null;
+  // Force structural hash to invalidate so updPipeline rebuilds from scratch
+  _pipelineStructHash = '';
+  // Wipe 3D viewer
+  try{ window._v?.clear?.(); }catch{}
+}
+
+// Show the pending-run pre-disk placeholder: prompt + uploaded image preview.
+// Visible during the ~2-30s gap between launching and the concept file landing.
+function showPendingNewRun(prompt, imageDataUrl){
+  _pendingNewRun = { prompt, imageDataUrl, ts: Date.now() };
+  const empty = document.getElementById('pv-2d-empty');
+  const img   = document.getElementById('pv-img');
+  if(imageDataUrl){
+    if(img){ img.src = imageDataUrl; img.style.display = 'block'; }
+    if(empty) empty.style.display = 'none';
+    document.getElementById('pv-name').textContent = 'reference (uploaded)';
+  } else if(empty){
+    empty.style.display = 'grid';
+    empty.innerHTML = '<div style="text-align:center;color:var(--dim2);font-size:12px">'
+      + '<div style="font-size:22px;margin-bottom:8px">⟳</div>'
+      + '<div>Starting pipeline…</div>'
+      + '<div style="margin-top:6px;font-style:italic;max-width:340px;'
+      + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'
+      + (prompt||'').replace(/"/g,'&quot;') + '">"' + (prompt||'(no prompt)') + '"</div>'
+      + '</div>';
+  }
+  // Make the prompt banner visible immediately
+  const promptWrap = document.getElementById('pl-prompt-wrap');
+  if(promptWrap){
+    promptWrap.style.display = '';
+    document.getElementById('pl-prompt').textContent = '"' + (prompt || '...') + '"';
+  }
+  const plIdle = document.getElementById('pl-idle');
+  if(plIdle) plIdle.style.display = 'none';
+}
+function updPipeline(d){
+  const cur = d.current;
+  // Surface "actually running" state to updHist so the Current card only
+  // pins when a python process is actively detected (not just step<4).
+  _pipelineActuallyRunning = !!(cur && cur.active);
+
+  // Detect run_id change → flush stale preview (old image, mv-strip, 3D mesh)
+  // so the user sees the NEW run's source immediately instead of the previous
+  // run lingering until the rebuild happens. Also clears the pending-placeholder
+  // once the real run is on disk.
+  if(cur && cur.run_id && cur.run_id !== _lastSeenRunId){
+    if(_lastSeenRunId !== null){
+      // Genuine switch — wipe stale UI before rendering the new state
+      clearPreviewForNewRun();
+    }
+    _lastSeenRunId = cur.run_id;
+    // If a pending placeholder is up and this new run started after we
+    // launched it, the real disk file has caught up — drop the placeholder.
+    if(_pendingNewRun){
+      _pendingNewRun = null;
+    }
+  }
+  if(cur){
+    // Auto-unlock: when the LATEST run on disk changes (new run kicked off
+    // OR the previously-active run completed and a fresh one started),
+    // jump the main view to it. Don't require cur.active — the process
+    // detection lags by 1-2s after orchestrate.py starts, so we'd miss
+    // the early phases otherwise.
+    if(_liveRunId && cur.run_id !== _liveRunId){
+      _viewingRunId = cur.run_id;
+      document.getElementById('back-to-live')?.remove();
+      toast('New run detected — switched to live', 'ok');
+    }
+    _liveRunId = cur.run_id;
+  }
+  // STRUCTURAL hash: things that change between stages — heavy DOM rebuilds gated on this.
+  const structH = cur
+    ? `${cur.run_id}|${cur.step}|${cur.active?1:0}|${cur.active_stage||''}|${cur.has_mv?1:0}|${cur.glb_file||''}|${cur.concept_file||''}`
+    : 'idle';
+  // PROGRESS hash: changes every second during an active run — cheap text updates only.
+  const progH = cur && cur.timing
+    ? `${cur.timing.total_pct}|${cur.timing.step_pct}|${cur.timing.total_elapsed_s}|${cur.timing.eta_s}|${cur.timing.substep||''}`
+    : 'noprog';
+
+  // If only progress changed: skip the heavy rebuild, just update prog values
+  if(structH === _pipelineStructHash){
+    if(progH !== _pipelineProgHash && cur && cur.timing){
+      _pipelineProgHash = progH;
+      const t = cur.timing;
+      const pf = document.getElementById('p-fill');
+      const elPct = document.getElementById('p-pct');
+      const elEta = document.getElementById('p-eta');
+      const elTot = document.getElementById('p-total');
+      const elStp = document.getElementById('p-step');
+      const elEl  = document.getElementById('p-elapsed');
+      const elEt2 = document.getElementById('p-etav');
+      const elSub = document.getElementById('p-substep');
+      if(pf)  pf.style.width   = t.total_pct + '%';
+      if(elPct) elPct.textContent = t.total_pct + '%';
+      if(elEta) elEta.textContent = fmtTime(t.eta_s);
+      if(elTot) elTot.textContent = t.total_pct + '%';
+      if(elStp) elStp.textContent = t.step_pct + '%';
+      if(elEl)  elEl.textContent  = fmtTime(t.total_elapsed_s);
+      if(elEt2) elEt2.textContent = fmtTime(t.eta_s);
+      if(elSub) elSub.textContent = t.substep || 'working…';
+    }
+    return;   // no structural change → skip the heavy rebuild
+  }
+  _pipelineStructHash = structH;
+  _pipelineProgHash   = progH;
+
+  const dot = document.querySelector('#chip-live .live-dot');
+  const liveV = document.getElementById('chip-live-v');
+  const plStat = document.getElementById('pl-stat');
+  const plIdle = document.getElementById('pl-idle');
+  const promptWrap = document.getElementById('pl-prompt-wrap');
+  const progBlock = document.getElementById('prog-block');
+
+  // Show prompt if there's any run
+  if(cur){
+    promptWrap.style.display = '';
+    document.getElementById('pl-prompt').textContent = '"' + (cur.prompt || cur.run_id) + '"';
+    plIdle.style.display = 'none';
+  } else {
+    promptWrap.style.display = 'none';
+    plIdle.style.display = '';
+    progBlock.style.display = 'none';
+    [0,1,2,3].forEach(i => { setStepState(i,'idle'); setStepSub(i, STEP_EST[i]); });
+    plStat.className = 'pl-status';
+    plStat.innerHTML = '<span class="live-dot off"></span><span>No active run</span>';
+    dot.classList.add('off'); liveV.textContent = 'Idle';
+    document.getElementById('chip-live').classList.remove('live');
+    return;
+  }
+
+  // Live/done state
+  if(cur.active){
+    dot.classList.remove('off'); liveV.textContent = 'Running';
+    document.getElementById('chip-live').classList.add('live');
+    plStat.className = 'pl-status live';
+    plStat.innerHTML = '<span class="live-dot"></span><span>Running · stage '
+      + (cur.active_stage || '?') + '</span>';
+    _wasActive = true;
+  } else if(cur.step === 4){
+    dot.classList.add('off'); liveV.textContent = 'Done';
+    document.getElementById('chip-live').classList.remove('live');
+    plStat.className = 'pl-status done';
+    plStat.innerHTML = '<span class="live-dot off" style="background:var(--accent)"></span>'
+      +'<span>Completed</span>';
+    if(_wasActive){ toast('Pipeline complete · STL ready', 'ok'); _wasActive = false; }
+  } else {
+    dot.classList.add('off'); liveV.textContent = 'Idle';
+    document.getElementById('chip-live').classList.remove('live');
+    plStat.className = 'pl-status';
+    plStat.innerHTML = '<span class="live-dot off"></span><span>Paused — last stage '
+      + (cur.step || 0) + '/4</span>';
+  }
+
+  // Mark steps done/active across the 9-step timeline
+  let activeStep = cur.active
+    ? mapStageSubstepToStep(cur.active_stage, cur.timing?.substep || d.proc?.substep || '')
+    : -1;
+  // Compute which steps are definitively done from observable artifacts
+  let lastDoneStep = -1;
+  if(cur.step === 4)                lastDoneStep = 8;     // STL exported → all done
+  else if(cur.glb_file)             lastDoneStep = 6;     // mesh exists (3D done)
+  else if(cur.concept_views?.top)   lastDoneStep = 5;     // top synthesized
+  else if(cur.has_mv)               lastDoneStep = 3;     // basic mv done (sides exist)
+  else if(cur.concept_file)         lastDoneStep = 2;     // concept + bg done
+
+  if(activeStep > 0) lastDoneStep = Math.max(lastDoneStep, activeStep - 1);
+
+  for(let i = 0; i < 9; i++){
+    if(i === activeStep)         setStepState(i, 'active');
+    else if(i <= lastDoneStep)   setStepState(i, 'done');
+    else                         setStepState(i, 'idle');
+  }
+  // Drive the single horizontal progress track. Fill ratio = done/(N-1).
+  // Use activeStep+0.5 if a step is mid-flight so the line shows partial progress.
+  const N = 9;
+  let donePct = 0;
+  if(lastDoneStep >= 0)         donePct = lastDoneStep / (N - 1);
+  if(activeStep > lastDoneStep) donePct = Math.max(donePct, (activeStep - 0.5) / (N - 1));
+  const stepsEl = document.getElementById('steps');
+  if(stepsEl) stepsEl.style.setProperty('--done-pct', donePct.toFixed(3));
+
+  // Sub-labels — short status under each circle
+  setStepSub(0, cur.concept_file ? '✓' : (activeStep===0 ? 'gen…' : STEP_EST[0]));
+  setStepSub(1, (lastDoneStep>=1) ? '✓' : (activeStep===1 ? 'refiner…' : STEP_EST[1]));
+  setStepSub(2, (lastDoneStep>=2 || cur.has_mv) ? '✓' : (activeStep===2 ? 'rembg…' : STEP_EST[2]));
+  setStepSub(3, cur.has_mv ? '4 views ✓' : (activeStep===3 ? 'Z123…' : STEP_EST[3]));
+  setStepSub(4, (lastDoneStep>=4) ? '✓' : (activeStep===4 ? '1024…' : STEP_EST[4]));
+  setStepSub(5, cur.concept_views?.top ? '✓' : (activeStep===5 ? 'fixing…' : STEP_EST[5]));
+  setStepSub(6, cur.glb_file ? 'mesh ✓' : (activeStep===6 ? 'inferring…' : STEP_EST[6]));
+  setStepSub(7, (cur.step>=3 && !cur.active) ? 'cleaned ✓' :
+                (activeStep===7 ? 'cleaning…' : STEP_EST[7]));
+  setStepSub(8, cur.step===4 ? 'ready' : STEP_EST[8]);
+
+  // Progress block
+  const t = cur.timing;
+  if(t && cur.active){
+    progBlock.style.display = '';
+    document.getElementById('p-pct').textContent = t.total_pct + '%';
+    document.getElementById('p-eta').textContent = fmtTime(t.eta_s);
+    document.getElementById('p-fill').style.width = t.total_pct + '%';
+    document.getElementById('p-fill').classList.remove('idle');
+    document.getElementById('p-total').textContent   = t.total_pct + '%';
+    document.getElementById('p-step').textContent    = t.step_pct + '%';
+    document.getElementById('p-elapsed').textContent = fmtTime(t.total_elapsed_s);
+    document.getElementById('p-etav').textContent    = fmtTime(t.eta_s);
+    document.getElementById('p-substep').textContent = t.substep || 'working…';
+  } else if(cur.step === 4){
+    progBlock.style.display = '';
+    document.getElementById('p-fill').style.width = '100%';
+    document.getElementById('p-fill').classList.add('idle');
+    document.getElementById('p-pct').textContent = '100%';
+    document.getElementById('p-eta').textContent = 'done';
+    document.getElementById('p-total').textContent = '100%';
+    document.getElementById('p-step').textContent = '100%';
+    document.getElementById('p-substep').textContent = 'Pipeline complete — STL ready for slicer';
+  } else {
+    progBlock.style.display = 'none';
+  }
+
+  // Preview — main image
+  // If user has clicked a history row to view a different run, don't let
+  // the periodic poll overwrite the preview. Only auto-update when viewing
+  // the current run (or nothing selected).
+  let activeView = null;
+  const viewingDifferent = _viewingRunId && _viewingRunId !== cur.run_id;
+  if(viewingDifferent){
+    /* keep the previewed historical run loaded */
+  } else if(cur.concept_file){
+    document.getElementById('pv-2d-empty').style.display = 'none';
+    const img = document.getElementById('pv-img');
+    const newSrc = '/api/image/' + encodeURIComponent(cur.concept_file);
+    if(img.src.indexOf(cur.concept_file) === -1) img.src = newSrc;
+    img.style.display = 'block';
+    document.getElementById('pv-name').textContent = cur.concept_file;
+    activeView = 'front';
+    let modelTag = '1024×1024';
+    document.getElementById('pv-dim').textContent = modelTag;
+    _viewingRunId = cur.run_id;
+  } else {
+    document.getElementById('pv-2d-empty').style.display = 'grid';
+    document.getElementById('pv-img').style.display = 'none';
+    document.getElementById('pv-name').textContent = '—';
+    document.getElementById('pv-dim').textContent = '—';
+  }
+
+  // When viewing a historical run, don't let the live poll overwrite views/glb
+  if(viewingDifferent) return;
+
+  // Multi-view thumbnail strip — show all 5 view slots (front/right/back/left/top)
+  // Top view is rendered from the GLB mesh when available (Zero123++ doesn't
+  // produce a true top-down view, so we synthesize it from the actual mesh).
+  const stripEl = document.getElementById('mv-strip');
+  if(cur.concept_file){
+    const v = cur.concept_views || {};
+    const slots = ['front','right','back','left','top'];
+    stripEl.style.display = 'flex';
+    stripEl.innerHTML = slots.map(s => {
+      if(s === 'top'){
+        // TOP view comes from the actual GLB mesh (guaranteed to match the
+        // subject). Synthesized-from-front was removed because SDXL has no
+        // 3D understanding and produced unrelated images. Synthesized
+        // top only appears if SYNTH_TOP=1 env var was set on the run.
+        if(cur.glb_file){
+          const topDataUrl = window._topRender || null;
+          if(topDataUrl){
+            return `<div class="mv-thumb${s===activeView?' active':''}"
+              title="top view (rendered from 3D mesh — guaranteed match)"
+              onclick="setTab('3d');camPreset('top')">
+              <span class="mv-l">${s}</span>
+              <img src="${topDataUrl}" alt="${s}"/>
+            </div>`;
+          }
+          return `<div class="mv-thumb" title="rendering top view from GLB…"
+            onclick="setTab('3d');camPreset('top')">
+            <span class="mv-l">${s}</span>
+            <div style="display:grid;place-items:center;width:100%;height:100%;font-size:9px;color:var(--dim2);font-family:var(--mono)">⟳ render</div>
+          </div>`;
+        }
+        // Pre-mesh: show the synthesized one IF user explicitly opted in
+        const synthTop = v[s];
+        if(synthTop){
+          return `<div class="mv-thumb${s===activeView?' active':''}"
+            title="top view (SDXL synth — may not match front, SYNTH_TOP=1)"
+            onclick="setMainImg('${synthTop}','top',event)">
+            <span class="mv-l">${s}</span>
+            <img src="/api/image/${encodeURIComponent(synthTop)}" alt="${s}" loading="lazy" style="opacity:.7"/>
+          </div>`;
+        }
+        return `<div class="mv-thumb empty"
+          title="top view will render from 3D mesh once HY3D completes">
+          <span class="mv-l">${s}</span></div>`;
+      }
+      const f = v[s];
+      if(f){
+        return `<div class="mv-thumb${s===activeView?' active':''}" title="${s} view"
+          onclick="setMainImg('${f}','${s}',event)">
+          <span class="mv-l">${s}</span>
+          <img src="/api/image/${encodeURIComponent(f)}" alt="${s}" loading="lazy"/>
+        </div>`;
+      }
+      return `<div class="mv-thumb empty" title="${s} view (pending — Zero123++)">
+        <span class="mv-l">${s}</span></div>`;
+    }).join('');
+  } else {
+    stripEl.style.display = 'none';
+  }
+
+  if(cur.glb_file && cur.glb_file !== _lastGlb){
+    _lastGlb = cur.glb_file;
+    window._v?.loadGlb(cur.glb_file);
+  }
+}
+
+// Click thumbnail → load that view as main image
+function setMainImg(file, label, evt){
+  const img = document.getElementById('pv-img');
+  img.src = '/api/image/' + encodeURIComponent(file);
+  img.style.display = 'block';
+  document.getElementById('pv-2d-empty').style.display = 'none';
+  document.getElementById('pv-name').textContent = file + ' · ' + label;
+  document.querySelectorAll('.mv-thumb').forEach(el => el.classList.remove('active'));
+  const target = (evt && evt.currentTarget) || (typeof event!=='undefined' && event && event.currentTarget);
+  if(target) target.classList.add('active');
+  setTab('2d');
+}
+
+// ── Live log tail polling ─────────────────────────────────────────
+let _lastLogFile = null;
+let _logAutoscroll = true;
+function toggleLogAutoscroll(){
+  _logAutoscroll = !_logAutoscroll;
+  document.getElementById('log-autoscroll').classList.toggle('on', _logAutoscroll);
+}
+let _logHash = '';
+let _logShown = false;
+async function pollLog(d){
+  const wrap = document.getElementById('log-wrap');
+  const tail = document.getElementById('log-tail');
+  if(!d.log){
+    if(_logShown){ wrap.style.display = 'none'; _logShown = false; }
+    return;
+  }
+  if(!_logShown){ wrap.style.display = 'flex'; _logShown = true; }
+  try{
+    const text = await fetch('/api/log/' + encodeURIComponent(d.log)).then(r => r.text());
+    // Hash on length + last 200 chars — cheap fingerprint
+    const hash = text.length + '|' + text.slice(-200);
+    if(hash === _logHash) return;   // no new lines since last poll
+    _logHash = hash;
+    if(!text){
+      tail.innerHTML = '<span class="ll-empty">waiting for output…</span>';
+      return;
+    }
+    // Colorize lines based on common pipeline markers
+    const lines = text.split(/\r?\n/).filter(Boolean).slice(-80);
+    tail.innerHTML = lines.map(L => {
+      const esc = L.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+      if(/\bERROR\b|Traceback|Exception|failed/i.test(L)) return `<div class="ll-err">${esc}</div>`;
+      if(/\bWARN/i.test(L))     return `<div class="ll-warn">${esc}</div>`;
+      if(/^\s*===|\[\d\/4\]|launch|exit code/i.test(L)) return `<div class="ll-cmd">${esc}</div>`;
+      if(/\[(hy3d|zero123|concept|blender)/i.test(L))   return `<div class="ll-stage">${esc}</div>`;
+      return `<div class="ll-info">${esc}</div>`;
+    }).join('');
+    if(_logAutoscroll) tail.scrollTop = tail.scrollHeight;
+  } catch(e){
+    tail.innerHTML = '<span class="ll-err">log fetch failed</span>';
+  }
+}
+
+let _outsHash = '';
+function updOuts(stls){
+  const arr = stls || [];
+  const hash = arr.slice(0,4).map(s =>
+    `${s.name}|${s.mb}|${s.tris||0}|${s.manifold?1:0}`).join('||');
+  if(hash === _outsHash) return;
+  _outsHash = hash;
+  const el = document.getElementById('out-list');
+  if(!arr.length){
+    el.innerHTML = '<div style="color:var(--dim3);font-size:11px;padding:8px;text-align:center">No outputs yet</div>';
+    return;
+  }
+  const stls_ = arr;
+  el.innerHTML = stls.slice(0,4).map(s => {
+    const dims = s.dims ? s.dims.map(d => d.toFixed(0)).join('×')+' mm' : '';
+    const tris = s.tris ? (s.tris/1e6).toFixed(1)+'M tris' : '';
+    const ok = s.manifold===true;
+    const fullPath = 'A:/Project False Face/3D generation/tabletop/outputs/stl/' + s.name;
+    return `<div class="out-row" title="${s.name} — click to reveal in file manager"
+      onclick='revealOut(${JSON.stringify(fullPath)})'>
+      <div class="out-icon"><svg class="ico"><use href="#i-cube"/></svg></div>
+      <div class="out-info">
+        <div class="out-name">${s.name}</div>
+        <div class="out-meta">${s.mb} MB${tris?' · '+tris:''}${dims?' · '+dims:''}</div>
+      </div>
+      ${ok?'<svg class="ico out-check" style="width:14px;height:14px"><use href="#i-check"/></svg>':''}
+    </div>`;
+  }).join('');
+}
+
+async function revealOut(p){
+  try{
+    const r = await fetch('/api/reveal', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({path:p})});
+    const d = await r.json();
+    if(d.ok) toast('Opening in file manager…');
+    else toast('Reveal failed: '+(d.error||'unknown'),'err');
+  } catch{ toast('Server error','err'); }
+}
+
+// Cache the latest history so loadHistoryRun can find concept/glb by run_id
+let _historyCache = [];
+let _historyHash  = '';
+let _pipelineActuallyRunning = false;   // set by updPipeline from cur.active
+function updHist(history){
+  // Filter out junk entries (user-pasted images and other non-run files
+  // that don't match the timestamped run_id pattern). Real runs look like
+  // 20260526_153851_xxx_xxxxxx — 8-digit date + 6-digit time + slug + 6-hex.
+  history = (history || []).filter(r => /^\d{8}_\d{6}_.+_[0-9a-f]{6}$/.test(r.run_id || ''));
+  _historyCache = history;
+  // Build a stable hash of the rendered fields — only re-render when data changes.
+  // Keeps clicked-row state, hover, and avoids the per-tick flicker the user saw.
+  const hash = _historyCache.map(r =>
+    `${r.run_id}|${r.step}|${r.concept_file||''}|${r.has_mv?1:0}|${r.glb_file||''}`
+  ).join('||') + '||live=' + _pipelineActuallyRunning + '|' + (_liveRunId || '');
+  if(hash === _historyHash) return;   // no change — skip the DOM rebuild
+  _historyHash = hash;
+
+  const el = document.getElementById('hist-list');
+  if(!history.length){
+    el.innerHTML = '<div style="color:var(--dim3);font-size:11px;padding:8px;text-align:center">No runs yet</div>';
+    return;
+  }
+  // Pin the currently-active run as a special pinned card at the top.
+  // STRICT: only if a python process is actually running AND this is the
+  // live run. Stops abandoned/killed runs from being labelled "Current".
+  const active = (_pipelineActuallyRunning && _liveRunId)
+    ? history.find(r => r.run_id === _liveRunId)
+    : null;
+  let parts = [];
+  if(active){
+    const ts = (active.timestamp || '').replace('T',' ').split('.')[0].slice(5,16);
+    const thumb = active.concept_file
+      ? `<img class="hist-thumb" src="/api/image/${encodeURIComponent(active.concept_file)}" loading="lazy" alt=""
+          onerror="this.outerHTML='<div class=hist-ph><svg class=ico><use href=#i-img/></svg></div>'"/>`
+      : '<div class="hist-ph"><svg class="ico"><use href="#i-img"/></svg></div>';
+    parts.push(`<div class="hist-row hist-active"
+      title="Click to view current run in preview"
+      onclick='loadHistoryRun(${JSON.stringify(active.run_id)})'
+      style="border-color:var(--accent);background:rgba(34,197,94,.06)">
+      ${thumb}
+      <div class="hist-info">
+        <div style="display:flex;align-items:center;gap:6px;font-size:9px;
+          color:var(--accent);font-weight:800;letter-spacing:.06em;
+          text-transform:uppercase;margin-bottom:2px">
+          <span class="live-dot" style="width:6px;height:6px"></span>Current</div>
+        <div class="hist-prompt">${active.prompt || active.run_id}</div>
+        <div class="hist-ts">${ts}</div>
+      </div>
+      <span class="hbadge wip">STEP ${active.step}/4</span>
+    </div>`);
+  }
+  // Other recent runs (excluding the active one, if any)
+  parts = parts.concat(history.filter(r => r !== active).slice(0, 8).map(r => {
+    const ts = (r.timestamp || '').replace('T',' ').split('.')[0].slice(5,16);
+    const done = r.step === 4;
+    const thumb = r.concept_file
+      ? `<img class="hist-thumb" src="/api/image/${encodeURIComponent(r.concept_file)}" loading="lazy" alt=""
+          onerror="this.outerHTML='<div class=hist-ph><svg class=ico><use href=#i-img/></svg></div>'"/>`
+      : '<div class="hist-ph"><svg class="ico"><use href="#i-img"/></svg></div>';
+    return `<div class="hist-row" title="Click to load this run"
+      onclick='loadHistoryRun(${JSON.stringify(r.run_id)})'>
+      ${thumb}
+      <div class="hist-info">
+        <div class="hist-prompt">${r.prompt || r.run_id}</div>
+        <div class="hist-ts">${ts}</div>
+      </div>
+      <span class="hbadge ${done?'done':'wip'}">${done?'DONE':'STEP '+r.step+'/4'}</span>
+    </div>`;
+  }));
+  el.innerHTML = parts.join('');
+}
+
+// Click a history row → load that run's artifacts into the main preview.
+let _viewingRunId = null;
+let _liveRunId    = null;   // tracks what the dashboard considers the "live" run
+function unlockToLive(){
+  _viewingRunId = _liveRunId;
+  _pipelineHash = '';   // force re-render to current
+  document.getElementById('back-to-live')?.remove();
+  refresh();
+  toast('Locked back to live run', 'ok');
+}
+function loadHistoryRun(runId){
+  const r = _historyCache.find(x => x.run_id === runId);
+  if(!r){ toast('Run not found', 'err'); return; }
+  _viewingRunId = runId;
+  // Add a "Back to live" button if viewing a different run than the live one
+  if(_liveRunId && runId !== _liveRunId){
+    let btn = document.getElementById('back-to-live');
+    if(!btn){
+      btn = document.createElement('button');
+      btn.id = 'back-to-live';
+      btn.className = 'btn primary';
+      btn.style.cssText = 'position:fixed;top:62px;left:50%;transform:translateX(-50%);'
+        +'z-index:60;padding:7px 14px;font-size:12px;animation:tIn .2s ease-out;'
+        +'box-shadow:0 4px 16px rgba(0,0,0,.5)';
+      btn.innerHTML = '<svg class="ico" style="width:11px;height:11px;'
+        +'transform:rotate(180deg)"><use href="#i-spin"/></svg> Viewing historical · '
+        +'click to return to live';
+      btn.onclick = unlockToLive;
+      document.body.appendChild(btn);
+    }
+  }
+  // Concept image
+  if(r.concept_file){
+    document.getElementById('pv-2d-empty').style.display = 'none';
+    const img = document.getElementById('pv-img');
+    img.src = '/api/image/' + encodeURIComponent(r.concept_file);
+    img.style.display = 'block';
+    document.getElementById('pv-name').textContent = r.concept_file;
+    document.getElementById('pv-dim').textContent = (r.prompt || r.run_id).slice(0, 60);
+  }
+  // Multi-view strip (load views if present)
+  const stripEl = document.getElementById('mv-strip');
+  if(r.concept_views){
+    const v = r.concept_views;
+    const slots = ['front','right','back','left','top'];
+    stripEl.style.display = 'flex';
+    stripEl.innerHTML = slots.map(s => {
+      const f = v[s];
+      return f
+        ? `<div class="mv-thumb" onclick="setMainImg('${f}','${s}',event)" title="${s} view">
+            <span class="mv-l">${s}</span>
+            <img src="/api/image/${encodeURIComponent(f)}" alt="${s}" loading="lazy"/></div>`
+        : `<div class="mv-thumb empty"><span class="mv-l">${s}</span></div>`;
+    }).join('');
+  } else {
+    stripEl.style.display = 'none';
+  }
+  // GLB into 3D viewer (if present)
+  if(r.glb_file){
+    window._v?.loadGlb(r.glb_file);
+  }
+  // Switch to concept tab so the loaded image is visible
+  setTab('2d');
+  toast('Loaded run ' + runId.slice(-6), 'ok');
+}
+
+function tickClock(){
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString('en-GB', {hour12:false});
+}
+setInterval(tickClock, 1000); tickClock();
+
+async function refresh(){
+  try{
+    const d = await fetch('/api/status').then(r => r.json());
+    updGpu(d.gpu);
+    updSys(d.sys);
+    updPipeline(d);
+    updOuts(d.stls || []);
+    updHist(d.history || []);
+    pollLog(d);
+  } catch(e){ /* keep going */ }
+}
+document.getElementById('log-autoscroll').classList.add('on');
+refresh(); setInterval(refresh, 2000);
+</script>
+</body>
+</html>

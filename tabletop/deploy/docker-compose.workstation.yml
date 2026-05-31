@@ -1,0 +1,51 @@
+# ============================================================
+#  3d_print_model_generator — workstation compose (dual RTX 5090)
+#  Conventions per the workstation handoff doc:
+#   - host port 7800 (avoids taken 7000/7443)
+#   - data on NVMe at /opt/gen3d/data  (NEVER on the NFS mount)
+#   - own bridge network (does NOT join nasvault-net)
+#   - unique names (no nasvault* collisions), restart, healthcheck,
+#     mem_limit + shm_size, GPU reservation, .env secrets
+# ============================================================
+services:
+  gen3d:
+    build:
+      context: ../..                      # repo root (compose lives in tabletop/deploy)
+      dockerfile: tabletop/deploy/Dockerfile.workstation
+    image: gen3d:latest
+    container_name: gen3d-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PORT=7800
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - HF_HOME=/data/hf
+      - NVIDIA_VISIBLE_DEVICES=${GEN3D_GPUS:-all}
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+      # Pin to a single 5090 (NASVault uses 0,1): set GEN3D_GPUS=1 + CUDA_VISIBLE_DEVICES=1 in .env
+    ports:
+      - "7800:7800"
+    volumes:
+      - ../..:/app:ro                      # code bind-mount, read-only
+      - /opt/gen3d/data:/data              # models + outputs on NVMe (host-side)
+    networks: [gen3d-net]
+    shm_size: "16gb"
+    mem_limit: 64g
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all                   # or count: 1 to pin one GPU
+              capabilities: [gpu, compute, utility, video]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7800/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 180s
+      retries: 3
+
+networks:
+  gen3d-net:
+    name: gen3d-net
+    driver: bridge

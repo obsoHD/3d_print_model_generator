@@ -1,0 +1,60 @@
+{
+  "_comment": "SDXL-base-1.0 workflow for tabletop TERRAIN concept. Drop-in fallback when FLUX weights absent. Same placeholder scheme as flux_terrain_concept.json.",
+  "4": {
+    "inputs": {
+      "ckpt_name": "sdxl\\sd_xl_base_1.0.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple"
+  },
+  "6": {
+    "inputs": {
+      "text": "$PROMPT$, isolated terrain piece, hero shot, 3/4 perspective, plain white background, even diffuse lighting, no foliage drifting off the base, single piece, tabletop wargame scenery, ~100mm scale, no people, no figures, sharp focus, professional product photography",
+      "clip": ["4", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "7": {
+    "inputs": {
+      "text": "$NEG$, people, figures, miniatures, busy background, cropped, deformed",
+      "clip": ["4", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "13": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage"
+  },
+  "20": {
+    "inputs": {
+      "seed": "$SEED$",
+      "steps": 30,
+      "cfg": 7.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1.0,
+      "model": ["4", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["13", 0]
+    },
+    "class_type": "KSampler"
+  },
+  "21": {
+    "inputs": {
+      "samples": ["20", 0],
+      "vae": ["4", 2]
+    },
+    "class_type": "VAEDecode"
+  },
+  "30": {
+    "inputs": {
+      "filename_prefix": "tabletop/terrain",
+      "images": ["21", 0]
+    },
+    "class_type": "SaveImage"
+  }
+}
