@@ -20,9 +20,7 @@ services:
       - DASHBOARD_PORT=7800              # server.js reads DASHBOARD_PORT (default 7842)
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
       - HF_HOME=/data/hf
-      - NVIDIA_VISIBLE_DEVICES=${GEN3D_GPUS:-all}
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
-      # Pin to a single 5090 (NASVault uses 0,1): set GEN3D_GPUS=1 + CUDA_VISIBLE_DEVICES=1 in .env
     ports:
       - "7800:7800"
     volumes:
@@ -31,14 +29,17 @@ services:
       # clones and node setup. Update code with: git pull && ... up -d --build
       - /opt/gen3d/data:/data              # models + outputs on NVMe (host-side)
     networks: [gen3d-net]
-    shm_size: "16gb"
-    mem_limit: 64g
+    shm_size: "32gb"                       # 245 GB host RAM — generous decode buffers
+    mem_limit: 96g
     deploy:
       resources:
         reservations:
           devices:
+            # Pin the IDLE card. On this box GPU0 drives the desktop, GPU1 is free.
+            # Inside the container this single GPU appears as cuda:0.
+            # To use BOTH cards instead: delete `device_ids` and add `count: all`.
             - driver: nvidia
-              count: all                   # or count: 1 to pin one GPU
+              device_ids: ["1"]
               capabilities: [gpu, compute, utility, video]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:7800/"]

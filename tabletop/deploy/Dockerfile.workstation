@@ -1,13 +1,15 @@
 # ============================================================
 #  3d_print_model_generator — workstation image (dual RTX 5090)
-#  Base: CUDA 12.8 (Blackwell sm_120 needs >=12.8; 12.4 has no
-#  sm_120 kernels). Confirm host driver >=570 with nvidia-smi.
+#  Base: CUDA 12.8 devel on Ubuntu 24.04 (native python3.12; 22.04 apt has no
+#  3.12). torch cu128 has the Blackwell sm_120 kernels and runs fine on the
+#  host's newer driver (confirmed: driver 595 / CUDA 13.2 — forward-compatible).
 # ============================================================
-FROM nvidia/cuda:12.8.0-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.0-devel-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
     TORCH_CUDA_ARCH_LIST="12.0" \
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     HF_HOME=/data/hf \
