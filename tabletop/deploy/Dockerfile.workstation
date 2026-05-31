@@ -40,6 +40,10 @@ RUN python -m pip install --upgrade setuptools wheel \
         --index-url https://download.pytorch.org/whl/cu128 \
  && python -m pip install -r /tmp/requirements.linux.txt
 
+# diso (TripoSG DMC): CUDA source build that imports torch at build time, so it
+# MUST skip pip build isolation to see the torch installed above.
+RUN python -m pip install --no-build-isolation diso==0.1.4
+
 # --- clone the Hunyuan codebases the engines import (code only; weights -> /data) ---
 #   single-view path uses hy3dshape (2.1 repo); mv path uses hy3dgen (2.0 repo)
 RUN git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1.git /app/tabletop/Hunyuan3D-2.1 \

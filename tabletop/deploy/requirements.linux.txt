@@ -10,9 +10,11 @@
 # source if ever needed. diso (TripoSG DMC) builds from source on first run.
 
 # --- core 3D / mesh ---
+# NOTE: diso (TripoSG DMC) is NOT here — it's a CUDA source build that imports
+# torch at build time, so it must be installed with --no-build-isolation AFTER
+# torch (see Dockerfile). Putting it here would fail under pip build isolation.
 trimesh==4.10.1
 pymeshfix==0.18.1
-diso==0.1.4
 numpy<2
 scipy
 networkx
