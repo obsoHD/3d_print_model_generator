@@ -4,7 +4,7 @@
 set -euo pipefail
 
 DATA=/data
-mkdir -p "$DATA/hf" "$DATA/models" "$DATA/outputs"
+mkdir -p "$DATA/hf" "$DATA/models" "$DATA/outputs" "$DATA/outputs/logs"
 
 # All pipeline subprocesses share the one container interpreter.
 export GEN3D_PY="${GEN3D_PY:-$(command -v python)}"
@@ -37,6 +37,11 @@ PY
 # Headless X for PrusaSlicer/Bambu CLI + any GL-dependent CAD render.
 export DISPLAY=:99
 ( Xvfb :99 -screen 0 1280x1024x24 >/dev/null 2>&1 & ) || true
+
+# Startup diagnostics: report deps / CUDA / models / engine readiness in one
+# place. Informational only (never blocks). Shown in `docker logs` + persisted.
+echo "[entrypoint] running startup diagnostics..."
+python "$APP/pipeline/diagnostics.py" 2>&1 | tee "$DATA/outputs/logs/startup_diagnostics.log" || true
 
 cd /app/tabletop/dashboard
 export DASHBOARD_PORT="${DASHBOARD_PORT:-7800}"
