@@ -33,10 +33,11 @@ WORKDIR /app
 
 # --- python: torch (cu128) first, then the curated active-engine deps ---
 COPY tabletop/deploy/requirements.linux.txt /tmp/requirements.linux.txt
-# NOTE: do NOT upgrade the Debian-managed pip (no RECORD file → uninstall fails).
-# The system pip is fine; just refresh setuptools/wheel for source builds.
-RUN python -m pip install --upgrade setuptools wheel \
- && python -m pip install torch==2.8.0 torchvision==0.23.0 \
+# NOTE: do NOT upgrade the Debian-managed pip/setuptools/wheel — they're in
+# dist-packages with no RECORD file, so pip can't uninstall them and any
+# --upgrade aborts. The system versions (pip 24 / setuptools 68 / wheel 0.42)
+# install torch wheels and build diso fine. Just go straight to the installs.
+RUN python -m pip install torch==2.8.0 torchvision==0.23.0 \
         --index-url https://download.pytorch.org/whl/cu128 \
  && python -m pip install -r /tmp/requirements.linux.txt
 
