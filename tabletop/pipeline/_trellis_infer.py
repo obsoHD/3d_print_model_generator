@@ -164,13 +164,17 @@ def main() -> int:
     _force_xformers_cutlass()   # Blackwell-safe sparse attention
     print(f"[trellis] running (seed={args.seed}, tokens={args.max_tokens}, "
           f"steps={args.steps})...", flush=True)
-    # preprocess_image=False: we already removed the background upstream
-    # (concept_gen rembg), so skip TRELLIS.2's internal RMBG re-crop.
+    # preprocess_image=TRUE is REQUIRED for correct proportions: TRELLIS.2's
+    # preprocess doesn't just remove background — it CENTERS the subject, pads to
+    # a square, and rescales to the canonical framing the model was trained on.
+    # With it OFF, the subject's framing/aspect feeds in raw and TRELLIS
+    # reconstructs squashed/dwarfish proportions. (It re-runs its RMBG, which is
+    # gated but accepted; harmless that we also removed bg upstream.)
     try:
         m = pipe.run(
             img,
             seed=args.seed,
-            preprocess_image=False,
+            preprocess_image=True,
             max_num_tokens=int(args.max_tokens),
             sparse_structure_sampler_params={"steps": int(args.steps)},
             shape_slat_sampler_params={"steps": int(args.steps)},
@@ -180,7 +184,7 @@ def main() -> int:
         # Param-name drift across TRELLIS.2 versions — fall back to a plain run
         # so we still get a mesh (OOM is NOT caught here; lower TRELLIS_TOKENS).
         print(f"[trellis] WARN quality params rejected ({e}); plain run", flush=True)
-        m = pipe.run(img, seed=args.seed, preprocess_image=False)[0]
+        m = pipe.run(img, seed=args.seed, preprocess_image=True)[0]
 
     def _np(x):
         return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
