@@ -51,6 +51,11 @@ plyfile
 joblib
 wandb           # CraftsMan imports it at module load (logging)
 tensorboardX    # CraftsMan logger
+# TRELLIS.2 pure-python imports (SAFE — no torch/numpy impact). Its custom CUDA
+# exts (o-voxel/cumesh/flexgemm) are NOT here — those need an isolated build.
+easydict
+igraph
+utils3d
 
 # --- image / background removal ---
 pillow
