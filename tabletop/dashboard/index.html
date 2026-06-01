@@ -833,6 +833,12 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
 
         <!-- Viewer look sidebar: lighting / color / background -->
         <div class="v-panel" id="v-panel">
+          <div class="v-sec-t">Inspect</div>
+          <button class="v-preset" id="vc-holes" style="flex:none" onclick="inspectHoles()">⬤ Show holes / non-manifold edges</button>
+          <div style="font-size:9px;color:var(--dim3);line-height:1.4">
+            <span style="color:#ff2d55">●</span> open holes &nbsp;
+            <span style="color:#ffa500">●</span> non-manifold</div>
+
           <div class="v-sec-t">Depth</div>
           <button class="v-preset" id="vc-depth" style="flex:none" onclick="toggleDepth()">✦ Ambient occlusion + contact shadow</button>
           <div class="v-sec-t">Lighting</div>
@@ -1447,8 +1453,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass }     from 'three/addons/postprocessing/RenderPass.js';
 import { SSAOPass }       from 'three/addons/postprocessing/SSAOPass.js';
+import { mergeVertices }  from 'three/addons/utils/BufferGeometryUtils.js';
 
-let composer = null, ssaoPass = null, groundPlane = null;
+let composer = null, ssaoPass = null, groundPlane = null, edgeOverlay = null;
 
 let renderer, scene, camera, controls, model, lastGlb = null;
 let wireOn = false, autoRot = false;
@@ -1647,12 +1654,59 @@ function toggleDepth(){
   const b = document.getElementById('vc-depth');
   if(b) b.classList.toggle('on', _vLook.depth);
 }
+// Inspect mode: highlight OPEN/hole edges (red) + NON-MANIFOLD edges (orange).
+// An edge used by exactly 2 faces is fine; 1 = boundary/hole, >2 = non-manifold.
+function inspectHoles(){
+  const btn = document.getElementById('vc-holes');
+  if(edgeOverlay){ scene.remove(edgeOverlay);
+    edgeOverlay.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
+    edgeOverlay = null; if(btn) btn.classList.remove('on'); return; }
+  if(!model){ return; }
+  if(btn){ btn.classList.add('on'); btn.textContent='⌛ scanning…'; }
+  // Defer so the button repaints before the (possibly heavy) scan.
+  setTimeout(()=>{
+    const holeSeg=[], nmSeg=[]; const v=new THREE.Vector3();
+    model.updateWorldMatrix(true,true);
+    model.traverse(o=>{
+      if(!o.isMesh || !o.geometry) return;
+      let g = o.geometry; if(!g.index){ try{ g = mergeVertices(g); }catch(e){} }
+      if(!g.index) return;
+      const idx=g.index.array, pos=g.attributes.position;
+      const ec=new Map();
+      const key=(a,b)=> a<b ? a+'_'+b : b+'_'+a;
+      for(let i=0;i<idx.length;i+=3){
+        const a=idx[i],b=idx[i+1],c=idx[i+2];
+        [[a,b],[b,c],[c,a]].forEach(([x,y])=>{ const k=key(x,y); ec.set(k,(ec.get(k)||0)+1); });
+      }
+      ec.forEach((cnt,k)=>{
+        if(cnt===2) return;
+        const [a,b]=k.split('_').map(Number);
+        v.fromBufferAttribute(pos,a).applyMatrix4(o.matrixWorld); const ax=v.x,ay=v.y,az=v.z;
+        v.fromBufferAttribute(pos,b).applyMatrix4(o.matrixWorld);
+        (cnt===1?holeSeg:nmSeg).push(ax,ay,az, v.x,v.y,v.z);
+      });
+    });
+    const grp=new THREE.Group();
+    const mk=(arr,color)=>{ if(!arr.length) return;
+      const gg=new THREE.BufferGeometry();
+      gg.setAttribute('position', new THREE.Float32BufferAttribute(arr,3));
+      const m=new THREE.LineBasicMaterial({color, depthTest:false});
+      const ls=new THREE.LineSegments(gg,m); ls.renderOrder=999; grp.add(ls); };
+    mk(holeSeg, 0xff2d55);   // red  = open holes / boundary edges
+    mk(nmSeg,   0xffa500);   // orange = non-manifold edges
+    edgeOverlay=grp; scene.add(grp);
+    if(btn){ btn.classList.add('on'); btn.textContent='⬤ Holes ON'; }
+    if(window.toast) window.toast(
+      `Inspect: ${holeSeg.length/6} open · ${nmSeg.length/6} non-manifold edges`,
+      (holeSeg.length||nmSeg.length)?'err':'ok');
+  }, 30);
+}
 
 window._v = { loadGlb, toggleSpin, toggleWire, doFit, applyLightPos };
 window.setLight = setLight; window.setMatColor = setMatColor;
 window.setFinish = setFinish; window.setBg = setBg;
 window.lightPreset = lightPreset; window.toggleVPanel = toggleVPanel;
-window.toggleDepth = toggleDepth;
+window.toggleDepth = toggleDepth; window.inspectHoles = inspectHoles;
 </script>
 
 <!-- ── MAIN APP ───────────────────────────────────────────────────── -->
