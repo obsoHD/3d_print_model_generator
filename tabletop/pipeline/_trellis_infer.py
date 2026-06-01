@@ -45,6 +45,67 @@ def _force_xformers_cutlass() -> None:
     print("[trellis] forced xformers CUTLASS attention (Blackwell-safe)", flush=True)
 
 
+def _trellis_geometry_mesh(m, max_faces, remesh=True,
+                           remesh_band=1.0, remesh_project=0.9, verbose=True):
+    """Run ONLY the geometry half of o_voxel.postprocess.to_glb — the cumesh
+    remesh + clean steps that build the clean watertight mesh — and read out
+    verts/faces, SKIPPING the slow CPU xatlas UV unwrap + nvdiffrast texture
+    bake (we print geometry, not color). Mirrors the upstream to_glb body so the
+    coordinate convention matches the textured path (Y-up glTF). ~seconds vs the
+    multi-minute xatlas tail."""
+    import cumesh
+    import numpy as np
+    import torch
+    import trimesh
+
+    dev = m.coords.device
+    aabb = torch.tensor([[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
+                        dtype=torch.float32, device=dev)
+    vs = m.voxel_size
+    if isinstance(vs, float):
+        vs = [vs, vs, vs]
+    if not torch.is_tensor(vs):
+        vs = torch.tensor(np.array(vs), dtype=torch.float32, device=dev)
+    grid_size = ((aabb[1] - aabb[0]) / vs.to(dev).float()).round().int()
+
+    mesh = cumesh.CuMesh()
+    mesh.init(m.vertices.cuda(), m.faces.cuda())
+    mesh.fill_holes(max_hole_perimeter=3e-2)
+    v, f = mesh.read()
+    bvh = cumesh.cuBVH(v, f)
+
+    if remesh:
+        center = aabb.mean(dim=0)
+        scale = (aabb[1] - aabb[0]).max().item()
+        resolution = grid_size.max().item()
+        mesh.init(*cumesh.remeshing.remesh_narrow_band_dc(
+            v, f, center=center,
+            scale=(resolution + 3 * remesh_band) / resolution * scale,
+            resolution=resolution, band=remesh_band,
+            project_back=remesh_project, verbose=verbose, bvh=bvh))
+        mesh.simplify(int(max_faces), verbose=verbose)
+    else:
+        mesh.simplify(int(max_faces) * 3, verbose=verbose)
+        mesh.remove_duplicate_faces(); mesh.repair_non_manifold_edges()
+        mesh.remove_small_connected_components(1e-5)
+        mesh.fill_holes(max_hole_perimeter=3e-2)
+        mesh.simplify(int(max_faces), verbose=verbose)
+        mesh.remove_duplicate_faces(); mesh.repair_non_manifold_edges()
+        mesh.remove_small_connected_components(1e-5)
+        mesh.fill_holes(max_hole_perimeter=3e-2)
+        mesh.unify_face_orientations()
+
+    ov, of = mesh.read()
+    ov = ov.cpu().numpy().astype("float64")
+    of = of.cpu().numpy()
+    # Same coord convention as to_glb (swap Y/Z, invert Y -> glTF Y-up), done
+    # safely (no in-place numpy view aliasing).
+    conv = ov.copy()
+    conv[:, 1] = ov[:, 2]
+    conv[:, 2] = -ov[:, 1]
+    return trimesh.Trimesh(vertices=conv, faces=of, process=False)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--image",  required=True)
@@ -113,31 +174,46 @@ def main() -> int:
     def _np(x):
         return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
     # === Build the printable mesh ===
-    # PREFER TRELLIS.2's OFFICIAL postprocessor. o_voxel.postprocess.to_glb with
-    # remesh=True turns the raw dual-grid voxel output into a CLEAN, watertight,
-    # decimated mesh. Taking m.vertices/m.faces RAW (our old path) keeps the dual
-    # grid's non-manifold regions, which the gauntlet's hole-filling then fans
-    # into flat triangles -> the "broken" slicer mesh. to_glb needs nvdiffrast/
-    # cumesh/flex_gemm (built as TRELLIS exts); if unavailable we fall back.
+    # Both paths use TRELLIS.2's OFFICIAL o_voxel remesh+clean (cumesh) — that's
+    # what turns the raw dual-grid voxel output into a CLEAN watertight mesh.
+    # The difference is the texture half (xatlas UV unwrap + nvdiffrast bake),
+    # which is a slow CPU step we DON'T need for printing:
+    #   TRELLIS_TEXTURE=0 (default) -> geometry only, ~seconds (printing)
+    #   TRELLIS_TEXTURE=1           -> full to_glb with baked texture (slow; the
+    #                                  colored GLB for viewing, not printing)
+    want_texture = os.environ.get("TRELLIS_TEXTURE", "0") == "1"
     mesh = None
-    try:
-        import o_voxel
-        print(f"[trellis] o_voxel official remesh -> clean watertight mesh "
-              f"(target {args.max_faces} faces)...", flush=True)
-        glb = o_voxel.postprocess.to_glb(
-            vertices=m.vertices, faces=m.faces,
-            attr_volume=m.attrs, coords=m.coords, attr_layout=m.layout,
-            voxel_size=m.voxel_size, aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
-            decimation_target=int(args.max_faces),
-            texture_size=512, remesh=True, remesh_band=1.0, remesh_project=0.9,
-            verbose=True)
-        mesh = glb if isinstance(glb, trimesh.Trimesh) else glb.dump(concatenate=True)
-        print(f"[trellis] official remesh OK: {len(mesh.faces)} faces, "
-              f"watertight={mesh.is_watertight}", flush=True)
-    except Exception as e:  # noqa: BLE001 — exts missing/old; use the fallback
-        print(f"[trellis] WARN o_voxel remesh unavailable ({e}); "
-              f"raw + pymeshlab decimate fallback", flush=True)
-        mesh = None
+    if not want_texture:
+        try:
+            print(f"[trellis] o_voxel GEOMETRY-only remesh (skip xatlas/texture; "
+                  f"target {args.max_faces})...", flush=True)
+            mesh = _trellis_geometry_mesh(m, int(args.max_faces), remesh=True,
+                                          verbose=True)
+            print(f"[trellis] geometry remesh OK (no texture): {len(mesh.faces)} "
+                  f"faces, watertight={mesh.is_watertight}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[trellis] WARN geometry-only path failed ({e}); "
+                  f"trying full to_glb", flush=True)
+            mesh = None
+    if mesh is None:
+        try:
+            import o_voxel
+            print(f"[trellis] o_voxel.to_glb (with texture; target "
+                  f"{args.max_faces})...", flush=True)
+            glb = o_voxel.postprocess.to_glb(
+                vertices=m.vertices, faces=m.faces,
+                attr_volume=m.attrs, coords=m.coords, attr_layout=m.layout,
+                voxel_size=m.voxel_size, aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
+                decimation_target=int(args.max_faces),
+                texture_size=1024, remesh=True, remesh_band=1.0, remesh_project=0.9,
+                verbose=True)
+            mesh = glb if isinstance(glb, trimesh.Trimesh) else glb.dump(concatenate=True)
+            print(f"[trellis] to_glb OK: {len(mesh.faces)} faces, "
+                  f"watertight={mesh.is_watertight}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[trellis] WARN o_voxel to_glb unavailable ({e}); "
+                  f"raw + pymeshlab decimate fallback", flush=True)
+            mesh = None
 
     if mesh is None:
         mesh = trimesh.Trimesh(vertices=_np(m.vertices), faces=_np(m.faces))
