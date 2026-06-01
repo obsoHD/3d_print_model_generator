@@ -94,6 +94,53 @@ header{display:flex;align-items:center;justify-content:space-between;
 @keyframes livePulse{0%,100%{opacity:1}50%{opacity:.45}}
 #clock{color:var(--dim2);font-size:12px;font-variant-numeric:tabular-nums;
   margin-left:6px;font-family:var(--mono)}
+.chip-btn{cursor:pointer}
+.chip-btn:hover{border-color:var(--accent)}
+.health-dot{width:8px;height:8px;border-radius:50%;background:var(--dim4);flex-shrink:0}
+.health-dot.ok{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.health-dot.warn{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+.health-dot.err{background:var(--err);box-shadow:0 0 8px var(--err)}
+.health-dot.run{background:#5e6;animation:livePulse 1s infinite}
+
+/* ── ENGINE STATUS MODAL ───────────────────────────────────────────── */
+.st-back{position:fixed;inset:0;z-index:240;background:rgba(8,11,16,.82);
+  backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;padding:20px}
+.st-back.open{display:flex}
+.st-box{width:min(720px,96vw);max-height:90vh;display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--line2);border-radius:14px;overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.st-hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:16px 20px;border-bottom:1px solid var(--line2);background:var(--bg2)}
+.st-hdr h2{font-size:15px;font-weight:700;display:flex;align-items:center;gap:9px}
+.st-hdr h2 .health-dot{width:10px;height:10px}
+.st-body{padding:16px 20px;overflow-y:auto}
+.st-core{font-family:var(--mono);font-size:11px;color:var(--dim);background:var(--bg2);
+  border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:14px;
+  display:flex;flex-wrap:wrap;gap:6px 16px;line-height:1.5}
+.st-core b{color:var(--text);font-weight:600}
+.st-list{display:flex;flex-direction:column;gap:8px}
+.st-eng{display:flex;align-items:center;gap:12px;padding:11px 13px;background:var(--bg2);
+  border:1px solid var(--line);border-radius:9px}
+.st-eng .health-dot{width:11px;height:11px}
+.st-eng-main{flex:1;min-width:0}
+.st-eng-name{font-size:13px;font-weight:600;color:var(--text)}
+.st-eng-detail{font-size:11px;color:var(--dim2);margin-top:2px;font-family:var(--mono);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st-eng.deps .st-eng-detail{color:var(--warn)}
+.st-eng.absent{opacity:.62}
+.st-tag{font-size:9px;font-weight:800;letter-spacing:.05em;padding:3px 8px;border-radius:5px;
+  font-family:var(--mono);flex-shrink:0}
+.st-tag.ok{background:var(--accent-soft);color:var(--accent)}
+.st-tag.deps{background:rgba(255,165,0,.16);color:var(--warn)}
+.st-tag.absent{background:var(--bg);color:var(--dim3)}
+.st-ms{font-size:9px;color:var(--dim4);font-family:var(--mono);flex-shrink:0}
+.st-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:13px 20px;border-top:1px solid var(--line2);background:var(--bg2)}
+.st-foot .muted{font-size:11px;color:var(--dim3);font-family:var(--mono)}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid var(--line2);
+  border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;
+  vertical-align:-2px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── MAIN GRID: 3-COL DASHBOARD ─────────────────────────────────────── */
 main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
@@ -329,18 +376,21 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
 .v-cbtn.on{color:var(--accent)}
 
 /* ── OUTPUT FILES + HISTORY ────────────────────────────────────────── */
-.out-list{display:flex;flex-direction:column;gap:6px}
-.out-row{display:flex;align-items:center;gap:9px;padding:9px 10px;
+.out-list{display:flex;flex-direction:column;gap:6px;min-width:0}
+.out-row{display:flex;align-items:center;gap:8px;padding:9px 10px;min-width:0;
   background:var(--bg2);border:1px solid var(--line);border-radius:var(--rad-sm);
-  transition:border-color .15s;cursor:pointer}
+  transition:border-color .15s;cursor:pointer;overflow:hidden}
 .out-row:hover{border-color:var(--accent)}
+.out-link{min-width:0}            /* let the inner flex child shrink so name truncates */
 .out-icon{width:30px;height:30px;border-radius:var(--rad-sm);display:grid;place-items:center;
   background:var(--accent-soft);color:var(--accent);flex-shrink:0}
-.out-info{flex:1;min-width:0}
+.out-info{flex:1;min-width:0;overflow:hidden}
 .out-name{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;font-family:var(--mono)}
-.out-meta{font-size:10px;color:var(--dim2);margin-top:2px;font-family:var(--mono)}
+.out-meta{font-size:10px;color:var(--dim2);margin-top:2px;font-family:var(--mono);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .out-check{color:var(--accent);font-size:13px;flex-shrink:0}
+.out-dl,.out-del{flex-shrink:0}
 
 .hist-list{display:flex;flex-direction:column;gap:5px;max-height:340px;overflow-y:auto}
 .hist-row{display:flex;align-items:center;gap:9px;padding:7px 9px;background:var(--bg2);
@@ -542,6 +592,10 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
     <div class="chip" id="chip-gpu"><span class="chip-k">GPU</span><span class="chip-v" id="g-util">—</span></div>
     <div class="chip" id="chip-vram"><span class="chip-k">VRAM</span><span class="chip-v" id="g-vram">—</span></div>
     <div class="chip" id="chip-temp"><span class="chip-k">Temp</span><span class="chip-v" id="g-temp">—</span></div>
+    <button class="chip chip-btn" id="chip-health" onclick="openStatus()"
+      title="Engine health — test every model before you run">
+      <span class="health-dot" id="health-dot"></span>
+      <span class="chip-k">Engines</span><span class="chip-v" id="health-sum">check</span></button>
     <span id="clock">--:--:--</span>
   </div>
 </header>
@@ -775,6 +829,28 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
 </main>
 
 <div id="toasts"></div>
+
+<!-- ════════════ ENGINE STATUS / HEALTH MODAL ════════════ -->
+<div class="st-back" id="st-back" onclick="if(event.target===this)closeStatus()">
+  <div class="st-box">
+    <div class="st-hdr">
+      <h2><span class="health-dot" id="st-hdr-dot"></span>Engine Health</h2>
+      <button class="modal-x" onclick="closeStatus()" aria-label="Close">✕</button>
+    </div>
+    <div class="st-body">
+      <div class="st-core" id="st-core">Loading system info…</div>
+      <div class="st-list" id="st-list">
+        <div style="color:var(--dim3);font-size:12px;padding:18px;text-align:center">
+          <span class="spin"></span>Running self-test — importing every engine…
+        </div>
+      </div>
+    </div>
+    <div class="st-foot">
+      <span class="muted" id="st-foot-msg">Tests that each model can actually load before you run it.</span>
+      <button class="btn" id="st-rerun" onclick="runHealth(true)">↻ Re-run check</button>
+    </div>
+  </div>
+</div>
 
 <!-- ════════════ NEW-RUN WIZARD ════════════ -->
 <style>
@@ -2237,6 +2313,112 @@ async function refresh(){
 }
 document.getElementById('log-autoscroll').classList.add('on');
 refresh(); setInterval(refresh, 2000);
+
+// ── ENGINE HEALTH / STATUS SCREEN ──────────────────────────────────────────
+let _healthTimer = null;
+let _healthLast  = null;   // last report seen (for the header chip)
+
+function _statusGlyph(s){ return s==='ok'?'ok':s==='deps'?'deps':'absent'; }
+
+function applyHealthChip(report, running){
+  const dot = document.getElementById('health-dot');
+  const sum = document.getElementById('health-sum');
+  if(!dot||!sum) return;
+  dot.className = 'health-dot';
+  if(running && !report){ dot.classList.add('run'); sum.textContent='testing…'; return; }
+  if(!report || report.error){ dot.classList.add(report&&report.error?'err':''); sum.textContent = report&&report.error?'error':'check'; return; }
+  const s = report.summary || {ok:0,deps:0,absent:0};
+  sum.textContent = `${s.ok}✓ ${s.deps?s.deps+'⚠ ':''}/ ${(report.engines||[]).length}`;
+  dot.classList.add(s.ok>0 && s.deps===0 ? 'ok' : s.ok>0 ? 'warn' : 'err');
+  if(running) dot.classList.add('run');
+}
+
+function renderHealth(payload){
+  const report  = payload.report;
+  const running = payload.running;
+  _healthLast = report || _healthLast;
+  applyHealthChip(report, running);
+
+  const hdrDot = document.getElementById('st-hdr-dot');
+  const core   = document.getElementById('st-core');
+  const list   = document.getElementById('st-list');
+  const foot   = document.getElementById('st-foot-msg');
+  const rerun  = document.getElementById('st-rerun');
+
+  if(rerun) rerun.disabled = !!running;
+
+  // ---- core / system line ----
+  if(report && report.core){
+    const c = report.core;
+    const gpuTxt = (c.gpus&&c.gpus.length) ? c.gpus.join(' · ') : (c.torch_error?'no CUDA':'—');
+    core.innerHTML =
+      `<span>python <b>${c.python||'?'}</b></span>`+
+      `<span>torch <b>${c.torch||'—'}</b></span>`+
+      `<span>cuda <b>${c.cuda?'yes':'no'}</b></span>`+
+      `<span>gpu <b>${gpuTxt}</b></span>`;
+  } else if(!report){
+    core.innerHTML = '<span class="spin"></span>Booting self-test…';
+  }
+
+  // ---- engines list ----
+  if(report && report.error){
+    list.innerHTML = `<div style="color:var(--err);font-size:12px;padding:14px;font-family:var(--mono);white-space:pre-wrap">`+
+      `self-test error: ${report.error}\n${(report.raw||'').replace(/</g,'&lt;')}</div>`;
+  } else if(report && report.engines){
+    const tagTxt = {ok:'READY', deps:'NEEDS DEPS', absent:'NOT INSTALLED'};
+    list.innerHTML = report.engines.map(e=>{
+      const st = _statusGlyph(e.status);
+      return `<div class="st-eng ${st}">
+        <span class="health-dot ${st==='ok'?'ok':st==='deps'?'warn':''}"></span>
+        <div class="st-eng-main">
+          <div class="st-eng-name">${e.label}</div>
+          <div class="st-eng-detail" title="${(e.detail||'').replace(/"/g,'&quot;')}">${e.detail||''}</div>
+        </div>
+        ${e.ms?`<span class="st-ms">${(e.ms/1000).toFixed(1)}s</span>`:''}
+        <span class="st-tag ${st}">${tagTxt[st]}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // ---- footer ----
+  if(running){
+    foot.innerHTML = '<span class="spin"></span>Importing every engine in isolated subprocesses…';
+  } else if(report && report.ts){
+    const s = report.summary||{};
+    foot.textContent = `${s.ok||0} ready · ${s.deps||0} need deps · ${s.absent||0} not installed · checked ${report.ts}`
+      + (report.elapsed_s?` (${report.elapsed_s}s)`:'');
+  } else {
+    foot.textContent = 'Tests that each model can actually load before you run it.';
+  }
+}
+
+async function fetchHealth(run){
+  try{
+    const payload = await fetch('/api/health'+(run?'?run=1':'')).then(r=>r.json());
+    renderHealth(payload);
+    // Keep polling while a check is running; stop once it settles.
+    if(payload.running){
+      if(!_healthTimer) _healthTimer = setInterval(()=>fetchHealth(false), 2500);
+    } else if(_healthTimer){
+      clearInterval(_healthTimer); _healthTimer=null;
+    }
+  } catch(e){ /* keep last */ }
+}
+
+function runHealth(force){ fetchHealth(true); }
+
+function openStatus(){
+  document.getElementById('st-back').classList.add('open');
+  fetchHealth(false);   // show cached or kick a first run
+}
+function closeStatus(){
+  document.getElementById('st-back').classList.remove('open');
+  if(_healthTimer){ clearInterval(_healthTimer); _healthTimer=null; }
+}
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeStatus(); });
+
+// Prime the header chip on load (lazy — server runs the test on first hit).
+fetchHealth(false);
 </script>
 </body>
 </html>

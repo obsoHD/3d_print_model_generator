@@ -549,6 +549,41 @@ function killPipeline() {
   return { ok: true };
 }
 
+// ── ENGINE HEALTH / SELF-TEST ─────────────────────────────────────────────────
+// Runs pipeline/engine_selftest.py (imports every engine's stack in subprocesses)
+// so the dashboard can show a real "will it run?" status screen — no surprises
+// on a live run. The probe is slow (loads torch), so it runs in the BACKGROUND:
+// GET /api/health returns the cached result + a `running` flag; the frontend
+// kicks a refresh with ?run=1 and polls until `ts` changes.
+let _health = { data: null, running: false, startedAt: 0, finishedAt: 0 };
+function startHealth(force) {
+  if (_health.running) return;
+  // Debounce: don't re-run within 20s unless forced.
+  if (!force && _health.finishedAt && Date.now() - _health.finishedAt < 20000) return;
+  _health.running = true;
+  _health.startedAt = Date.now();
+  const py = process.env.GEN3D_PY || 'python';
+  const script = path.join(TABLETOP, 'pipeline', 'engine_selftest.py');
+  cp.execFile(py, ['-u', script],
+    { timeout: 300000, maxBuffer: 8 * 1024 * 1024,
+      env: { ...process.env, PYTHONUTF8: '1' } },
+    (err, stdout, stderr) => {
+      let data;
+      try { data = JSON.parse(stdout); }
+      catch {
+        data = { error: 'self-test did not return JSON',
+                 raw: (String(stdout) + '\n' + String(stderr || '') +
+                       (err ? '\n' + err.message : '')).slice(-900),
+                 engines: [], core: {} };
+      }
+      data.ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      data.elapsed_s = Math.round((Date.now() - _health.startedAt) / 1000);
+      _health.data = data;
+      _health.running = false;
+      _health.finishedAt = Date.now();
+    });
+}
+
 // Last-resort guards: keep the dashboard alive even if something throws async.
 process.on('uncaughtException',  (e) => console.error('[uncaught]', e && e.stack || e));
 process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
@@ -586,6 +621,20 @@ const server = http.createServer(async (req, res) => {
     const body = JSON.stringify(getStatus());
     res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
     res.end(body);
+
+  } else if (url === '/api/health') {
+    // ?run=1 forces a fresh self-test; otherwise kick one off lazily if we've
+    // never run it. Always respond immediately with whatever we have.
+    const wantRun = /[?&]run=1\b/.test(req.url);
+    if (wantRun) startHealth(true);
+    else if (!_health.data && !_health.running) startHealth(false);
+    const payload = JSON.stringify({
+      running: _health.running,
+      started_at: _health.startedAt ? new Date(_health.startedAt).toISOString() : null,
+      report: _health.data,
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) });
+    res.end(payload);
 
   } else if (url.startsWith('/api/mesh/')) {
     const fname = decodeURIComponent(url.slice('/api/mesh/'.length));
