@@ -16,6 +16,35 @@ import sys
 from pathlib import Path
 
 
+def _force_xformers_cutlass() -> None:
+    """TRELLIS.2 SPARSE attention only supports xformers/flash_attn (no sdpa).
+    We route it to xformers, but xformers' default dispatch picks the flash
+    *Hopper* kernel (sm_90) which throws 'CUDA error: invalid argument' on
+    Blackwell (sm_120). Force the CUTLASS op (broad arch coverage); fall back to
+    auto-dispatch if CUTLASS rejects a specific mask/dtype."""
+    try:
+        import xformers.ops as xops  # noqa: WPS433
+    except Exception:  # noqa: BLE001
+        return
+    cutlass = getattr(xops, "MemoryEfficientAttentionCutlassOp", None)
+    if cutlass is None or getattr(xops.memory_efficient_attention, "_cutlass_forced", False):
+        return
+    orig = xops.memory_efficient_attention
+
+    def patched(*a, **k):
+        if k.get("op") is None:
+            k["op"] = cutlass
+            try:
+                return orig(*a, **k)
+            except Exception:  # noqa: BLE001
+                k.pop("op", None)
+        return orig(*a, **k)
+
+    patched._cutlass_forced = True  # noqa: SLF001
+    xops.memory_efficient_attention = patched
+    print("[trellis] forced xformers CUTLASS attention (Blackwell-safe)", flush=True)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--image",  required=True)
@@ -26,10 +55,12 @@ def main() -> int:
     args = ap.parse_args()
 
     sys.path.insert(0, args.lib)
-    # Pure-torch attention (scaled_dot_product_attention) — needs NEITHER xformers
-    # NOR flash-attn, both of which are an ABI/Blackwell-build minefield. TRELLIS.2
-    # supports ATTN_BACKEND=sdpa and lazy-loads backends, so this just works.
+    # DENSE attention -> pure-torch sdpa (no xformers/flash-attn needed). But
+    # TRELLIS.2's SPARSE attention supports ONLY xformers/flash_attn (no sdpa),
+    # so route THAT to xformers (installed) and force its CUTLASS op below to
+    # avoid the sm_90-only flash-Hopper kernel that crashes on Blackwell.
     os.environ["ATTN_BACKEND"] = "sdpa"
+    os.environ["SPARSE_ATTN_BACKEND"] = "xformers"
     os.environ.setdefault("SPCONV_ALGO", "native")
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     import torch
@@ -45,6 +76,7 @@ def main() -> int:
     pipe.cuda()
 
     img = Image.open(args.image).convert("RGBA")
+    _force_xformers_cutlass()   # Blackwell-safe sparse attention
     print(f"[trellis] running ({args.image}, seed={args.seed})...", flush=True)
     m = pipe.run(img)[0]   # O-Voxel mesh result
 

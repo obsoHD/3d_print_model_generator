@@ -30,7 +30,8 @@ def generate(image_path: str, out_path: str,
            "--lib", str(LIB_DIR), "--seed", str(seed)]
     print("  [trellis] inference (TRELLIS.2 4B, O-Voxel)...", flush=True)
     env = {**os.environ, "PYTHONUNBUFFERED": "1", "HF_HUB_VERBOSITY": "info",
-           "ATTN_BACKEND": "sdpa",   # pure-torch attention; no xformers/flash-attn
+           "ATTN_BACKEND": "sdpa",            # dense attention: pure-torch
+           "SPARSE_ATTN_BACKEND": "xformers", # sparse: xformers (no sdpa support)
            "SPCONV_ALGO": os.environ.get("SPCONV_ALGO", "native")}
     import collections
     tail = collections.deque(maxlen=80)
