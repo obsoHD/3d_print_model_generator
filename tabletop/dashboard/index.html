@@ -1419,6 +1419,19 @@ function loadGlb(name){
   document.getElementById('pv-3d-empty').style.display = 'grid';
   new GLTFLoader().load('/api/mesh/' + encodeURIComponent(name), gltf => {
     model = gltf.scene;
+    // Normalize material + normals. Engine meshes (TRELLIS.2, TripoSG) export
+    // from trimesh with NO vertex normals and no/odd materials, so three.js
+    // renders them dark + speckled. Recompute smooth normals and apply a clean
+    // matte double-sided material so the shape reads as a solid sculpt.
+    model.traverse(o => {
+      if(o.isMesh && o.geometry){
+        try{ o.geometry.computeVertexNormals(); }catch(e){}
+        o.material = new THREE.MeshStandardMaterial({
+          color:0x9aa4b2, roughness:0.80, metalness:0.0,
+          side:THREE.DoubleSide, flatShading:false });
+        o.material.wireframe = wireOn;
+      }
+    });
     const box = new THREE.Box3().setFromObject(model);
     const c = box.getCenter(new THREE.Vector3());
     const s = box.getSize(new THREE.Vector3());
