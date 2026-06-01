@@ -1042,6 +1042,14 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
 
     <!-- SCREEN 3: confirm -->
     <div class="wz-screen" data-screen="3">
+      <label style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;
+        font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--dim2)">
+        Name this model
+        <input id="wz-name" type="text" maxlength="40" autocomplete="off"
+          placeholder="e.g. bard, vampire ghoul, stone watchtower"
+          style="padding:11px 13px;font-size:14px;text-transform:none;letter-spacing:normal;font-weight:500"
+          oninput="wzBuildSummary()"/>
+      </label>
       <div class="wz-summary" id="wz-summary"></div>
       <div class="wz-foot">
         <button class="btn" onclick="wzGoto(2)">← Back</button>
@@ -1063,6 +1071,7 @@ function closeWizard(){ document.getElementById('wizard').classList.remove('open
 function wzReset(){
   WZ.engine=null; WZ.mode='prompt'; WZ.mvmode='views'; WZ.conceptPath=null;
   WZ.single=null; WZ.mv={front:null,left:null,back:null,gif:null};
+  const nmEl=document.getElementById('wz-name'); if(nmEl) nmEl.value='';
   document.querySelectorAll('.wz-card').forEach(c=>c.classList.remove('sel'));
   document.getElementById('wz-next1').disabled=true;
   document.getElementById('wz-concept-prev').style.display='none';
@@ -1171,14 +1180,20 @@ function wzBuildSummary(){
     : (WZ.mode==='prompt' ? 'prompt → concept image (—)' : '—')); }
   else { inp = WZ.mvmode==='gif' ? (WZ.mv.gif?'turntable GIF':'—')
     : `front/left/back (${['front','left','back'].filter(v=>WZ.mv[v]).length}/3)`; }
+  const nm = (document.getElementById('wz-name')||{}).value;
+  const nmTrim = nm ? nm.trim() : '';
   document.getElementById('wz-summary').innerHTML =
-    `<div>Engine: <b>${WZ_ENGINE_LABEL[WZ.engine]||WZ.engine}</b></div>`
+    `<div>Name: <b>${nmTrim ? nmTrim.replace(/[<>&]/g,'') : '<span style="color:var(--dim3)">(default — type one above)</span>'}</b></div>`
+    +`<div>Engine: <b>${WZ_ENGINE_LABEL[WZ.engine]||WZ.engine}</b></div>`
     +`<div>Input: <b>${inp}</b></div>`
     +`<div>Kind: <b>${kind}</b> · Output at statue scale (downsize in slicer)</div>`
     +`<div class="wz-hint">Validated against Bambu + PrusaSlicer before it's marked done.</div>`;
 }
 async function wzStart(){
   const single = wzIsSingle();
+  // Name the run — used as the label/filename. Falls back to a sensible default.
+  const nameEl = document.getElementById('wz-name');
+  const userName = (nameEl && nameEl.value.trim()) || '';
   let body;
   if(single){
     const kind=document.getElementById('wz-kind').value;
@@ -1186,11 +1201,14 @@ async function wzStart(){
     // Use whatever input exists — an uploaded image wins regardless of which
     // tab is active; otherwise fall back to a prompt-generated concept.
     if(WZ.single){
-      body={engine:WZ.engine,kind,printer,prompt:'uploaded subject',
+      body={engine:WZ.engine,kind,printer,
+        prompt:(userName || 'uploaded subject'),
         concept_image_data_url:WZ.single};
     } else if(WZ.conceptPath){
+      // Prompt-generated concept: the typed prompt names it, but an explicit
+      // name overrides for a cleaner label.
       body={engine:WZ.engine,kind,printer,
-        prompt:(document.getElementById('wz-prompt').value.trim()||'concept'),
+        prompt:(userName || document.getElementById('wz-prompt').value.trim() || 'concept'),
         input_image_path:WZ.conceptPath};
     } else {
       toast('Upload an image, or generate one from a prompt first','err'); return;
@@ -1198,7 +1216,8 @@ async function wzStart(){
   } else {
     const kind=document.getElementById('wz-kind2').value;
     const printer=document.getElementById('wz-printer2').value;
-    body={engine:'hunyuan2mv',kind,printer,prompt:'multiview subject',
+    body={engine:'hunyuan2mv',kind,printer,
+      prompt:(userName || 'multiview subject'),
       mv_reverse:document.getElementById('wz-reverse').checked};
     if(WZ.mvmode==='gif') body.mv_gif_data=WZ.mv.gif;
     else { body.mv_front_data=WZ.mv.front; body.mv_left_data=WZ.mv.left; body.mv_back_data=WZ.mv.back; }
