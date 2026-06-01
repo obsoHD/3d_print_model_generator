@@ -664,10 +664,17 @@ function killPipeline() {
       { timeout: 8000 }, () => {}
     );
   } else {
-    // Linux workstation: pattern-kill the pipeline subprocess tree.
+    // Linux workstation: SIGKILL the whole pipeline subprocess tree. -9 because
+    // finish-step processes sit in C extensions (pymeshfix/pymeshlab/blender)
+    // that ignore SIGTERM for long stretches, so a soft kill "does nothing".
     cp.exec(
-      "pkill -f orchestrate.py; pkill -f hy3d_infer; pkill -f _hunyuan; " +
-      "pkill -f _triposg_infer; pkill -f finish_mini; pkill -f mesh_gauntlet",
+      "pkill -9 -f orchestrate.py; pkill -9 -f _hunyuan; pkill -9 -f hy3d_infer; " +
+      "pkill -9 -f _trellis_infer; pkill -9 -f _hi3dgen_infer; " +
+      "pkill -9 -f _triposg_infer; pkill -9 -f _craftsman_infer; " +
+      "pkill -9 -f mesh_gauntlet; pkill -9 -f finish_mini; " +
+      "pkill -9 -f blender_cleanup; pkill -9 -f blender; " +
+      "pkill -9 -f slicer_validate; pkill -9 -f detail_enhance; " +
+      "pkill -9 -f pymeshfix; pkill -9 -f pymeshlab",
       { timeout: 8000 }, () => {}
     );
   }
