@@ -58,6 +58,7 @@ tensorboardX    # CraftsMan logger
 # git version (EasternJournalist/utils3d), handled in the isolated venv later.
 easydict
 igraph
+zstandard       # o_voxel .vxz voxel I/O (declared dep, skipped by --no-deps build)
 
 # --- image / background removal ---
 pillow
