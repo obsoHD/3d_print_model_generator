@@ -52,6 +52,9 @@ def main() -> int:
     ap.add_argument("--lib",    required=True, help="TRELLIS.2 repo dir")
     ap.add_argument("--model",  default="microsoft/TRELLIS.2-4B")
     ap.add_argument("--seed",   type=int, default=42)
+    ap.add_argument("--max-faces", type=int, default=800_000,
+                    help="decimate above this (TRELLIS.2 emits ~4M faces which "
+                         "hang the repair/solidify gauntlet)")
     args = ap.parse_args()
 
     sys.path.insert(0, args.lib)
@@ -83,6 +86,28 @@ def main() -> int:
     def _np(x):
         return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
     mesh = trimesh.Trimesh(vertices=_np(m.vertices), faces=_np(m.faces))
+    print(f"[trellis] raw mesh: {len(mesh.faces)} faces", flush=True)
+
+    # TRELLIS.2 emits ~4M faces — the repair/orient/solidify gauntlet effectively
+    # hangs on meshes that dense. Decimate to a printable target (quality is
+    # unaffected at mini scale; this is what TRELLIS.2's own to_glb does on export).
+    if len(mesh.faces) > args.max_faces:
+        try:
+            import pymeshlab
+            ms = pymeshlab.MeshSet()
+            ms.add_mesh(pymeshlab.Mesh(vertex_matrix=mesh.vertices.astype("float64"),
+                                       face_matrix=mesh.faces.astype("int32")))
+            ms.meshing_decimation_quadric_edge_collapse(
+                targetfacenum=int(args.max_faces), preservenormal=True,
+                preservetopology=False, planarquadric=True)
+            cm = ms.current_mesh()
+            mesh = trimesh.Trimesh(vertices=cm.vertex_matrix(),
+                                   faces=cm.face_matrix())
+            print(f"[trellis] decimated -> {len(mesh.faces)} faces "
+                  f"(target {args.max_faces})", flush=True)
+        except Exception as e:  # noqa: BLE001 — never block on decimation
+            print(f"[trellis] WARN decimation failed ({e}); exporting raw mesh",
+                  flush=True)
 
     out = Path(args.output); out.parent.mkdir(parents=True, exist_ok=True)
     mesh.export(str(out))

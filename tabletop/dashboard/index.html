@@ -755,7 +755,10 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
       <div class="log-wrap" id="log-wrap">
         <div class="log-head">
           <span><svg class="ico"><use href="#i-zap"/></svg>Live Output</span>
-          <button class="log-btn" id="log-autoscroll" onclick="toggleLogAutoscroll()">⇣ autoscroll</button>
+          <span style="display:flex;gap:6px">
+            <button class="log-btn" id="log-copy" onclick="copyLog()">⧉ copy</button>
+            <button class="log-btn" id="log-autoscroll" onclick="toggleLogAutoscroll()">⇣ autoscroll</button>
+          </span>
         </div>
         <div class="log-tail" id="log-tail"></div>
       </div>
@@ -2080,6 +2083,35 @@ function toggleLogAutoscroll(){
   _logAutoscroll = !_logAutoscroll;
   document.getElementById('log-autoscroll').classList.toggle('on', _logAutoscroll);
 }
+// Copy the live output to the clipboard. navigator.clipboard needs a secure
+// context (https/localhost) — over plain-HTTP LAN it's blocked, so fall back to
+// a hidden-textarea execCommand copy that works everywhere.
+async function copyLog(){
+  const t = window._logFullText
+    || document.getElementById('log-tail').innerText || '';
+  if(!t){ toast('No output to copy','err'); return; }
+  let ok = false;
+  try{
+    if(navigator.clipboard && window.isSecureContext){
+      await navigator.clipboard.writeText(t); ok = true;
+    }
+  }catch(e){ ok = false; }
+  if(!ok){
+    try{
+      const ta = document.createElement('textarea');
+      ta.value = t; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+    }catch(e){ ok = false; }
+  }
+  const btn = document.getElementById('log-copy');
+  if(ok){
+    toast('Copied live output ('+t.length+' chars)','ok');
+    if(btn){ const o=btn.textContent; btn.textContent='✓ copied'; btn.classList.add('on');
+             setTimeout(()=>{btn.textContent=o; btn.classList.remove('on');},1200); }
+  } else { toast('Copy failed — select the log text manually','err'); }
+}
 let _logHash = '';
 let _logShown = false;
 async function pollLog(d){
@@ -2094,6 +2126,7 @@ async function pollLog(d){
     const text = await fetch('/api/log/' + encodeURIComponent(d.log)).then(r => r.text());
     // Hash on length + last 200 chars — cheap fingerprint
     const hash = text.length + '|' + text.slice(-200);
+    window._logFullText = text;     // keep full fetched text for the copy button
     if(hash === _logHash) return;   // no new lines since last poll
     _logHash = hash;
     if(!text){
