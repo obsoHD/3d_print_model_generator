@@ -46,10 +46,15 @@ ENGINES = [
      "triposg/inference_utils.py", "import triposg, diso"),
     ("craftsman", "CraftsMan3D", "CraftsMan3D", "",
      "craftsman/__init__.py", "import craftsman"),
+    # Deeper probes than just the pipeline class: these pull the model/attention/
+    # sparse submodules that actually fail at RUN time (xformers, spconv, o_voxel,
+    # cumesh) — so the health screen catches them instead of a live run.
     ("hi3dgen", "Hi3DGen", "Stable3DGen", "",
-     "hi3dgen/__init__.py", "from hi3dgen.pipelines import Hi3DGenPipeline"),
+     "hi3dgen/__init__.py",
+     "from hi3dgen.pipelines import Hi3DGenPipeline; from hi3dgen.models import sparse_structure_flow"),
     ("trellis", "TRELLIS.2", "TRELLIS", "",
-     "trellis2/__init__.py", "from trellis2.pipelines import Trellis2ImageTo3DPipeline"),
+     "trellis2/__init__.py",
+     "import o_voxel; from trellis2.pipelines import Trellis2ImageTo3DPipeline"),
     ("parametric", "Parametric CAD", None, "",
      None, "import build123d"),
 ]
@@ -96,7 +101,7 @@ def probe_engine(spec) -> dict:
     path_lines = "".join(f"sys.path.insert(0, r{p!r})\n" for p in paths)
     snippet = (
         "import sys, os\n"
-        "os.environ.setdefault('ATTN_BACKEND','xformers')\n"
+        "os.environ['ATTN_BACKEND']='sdpa'\n"   # match runtime: pure-torch attn
         "os.environ.setdefault('SPCONV_ALGO','native')\n"
         + path_lines
         + f"{code}\n"

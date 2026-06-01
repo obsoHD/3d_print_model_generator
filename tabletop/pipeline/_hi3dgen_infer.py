@@ -26,7 +26,9 @@ def main() -> int:
     args = ap.parse_args()
 
     sys.path.insert(0, args.lib)
-    os.environ.setdefault("ATTN_BACKEND", "xformers")
+    # Pure-torch attention (scaled_dot_product_attention) so we need NEITHER
+    # xformers nor flash-attn. Hi3DGen's attention backends include 'sdpa'.
+    os.environ["ATTN_BACKEND"] = "sdpa"
     os.environ.setdefault("SPCONV_ALGO", "native")
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     import torch
