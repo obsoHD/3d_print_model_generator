@@ -130,15 +130,28 @@ def main() -> int:
             ms = pymeshlab.MeshSet()
             ms.add_mesh(pymeshlab.Mesh(vertex_matrix=mesh.vertices.astype("float64"),
                                        face_matrix=mesh.faces.astype("int32")))
-            ms.meshing_decimation_quadric_edge_collapse(
-                targetfacenum=int(args.max_faces),
-                preservenormal=True,
-                preservetopology=True,    # was False — False punches non-manifold
-                                          # holes/spanning tris -> flat-fan artifacts
-                planarquadric=True,
-                qualitythr=0.35,          # reject sliver/long spanning collapses
-                optimalplacement=True,
-                autoremoveduplicatevertices=True)
+            # Try the full clean-decimation params; if any param name has drifted
+            # across pymeshlab versions, retry with progressively simpler sets so
+            # we NEVER fall through to exporting the full multi-million-face mesh.
+            _param_sets = [
+                dict(targetfacenum=int(args.max_faces), preservenormal=True,
+                     preservetopology=True, planarquadric=True,
+                     qualitythr=0.35, optimalplacement=True),
+                dict(targetfacenum=int(args.max_faces), preservenormal=True,
+                     preservetopology=True),
+                dict(targetfacenum=int(args.max_faces)),
+            ]
+            _ok = False
+            for _ps in _param_sets:
+                try:
+                    ms.meshing_decimation_quadric_edge_collapse(**_ps)
+                    _ok = True
+                    break
+                except Exception as _de:  # noqa: BLE001 — param drift; try simpler
+                    print(f"[trellis] decim params {list(_ps)} rejected ({_de}); "
+                          f"retrying simpler", flush=True)
+            if not _ok:
+                raise RuntimeError("all decimation param sets failed")
             # Tidy any degenerate geometry the collapse left behind.
             for filt in ("meshing_remove_null_faces",
                          "meshing_remove_duplicate_faces",
