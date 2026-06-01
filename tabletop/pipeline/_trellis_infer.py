@@ -269,19 +269,19 @@ def main() -> int:
             except Exception as e:  # noqa: BLE001
                 print(f"[trellis] WARN decimation failed ({e}); raw mesh", flush=True)
 
-    # Manifold cleanup. Step 1 (trimesh, fast): merge the doubled vertices cumesh
-    # leaves at seams + drop degenerate/duplicate faces.
-    try:
-        mesh.merge_vertices()
-        mesh.update_faces(mesh.nondegenerate_faces())
-        mesh.update_faces(mesh.unique_faces())
-        mesh.remove_unreferenced_vertices()
-    except Exception as e:  # noqa: BLE001
-        print(f"[trellis] WARN trimesh dedup partial ({e})", flush=True)
-    # Step 2 (pymeshlab) — ONLY if not already watertight, and ONLY additively:
-    # close small holes (maxholesize cap = never fan). We do NOT run
-    # repair_non_manifold_edges because pymeshlab implements it by DELETING faces,
-    # which punches holes and breaks an already-clean watertight mesh.
+    # Manifold cleanup — but ONLY if cumesh didn't already give us a clean
+    # watertight mesh. cumesh's remesh+clean usually outputs watertight; our
+    # trimesh dedup + hole-close were OPENING it (stripping doubled geometry that
+    # held it closed). So: watertight mesh -> leave it pristine; otherwise try a
+    # gentle, ADDITIVE repair (close small holes only; never delete faces).
+    if not mesh.is_watertight:
+        try:
+            mesh.merge_vertices()
+            mesh.update_faces(mesh.nondegenerate_faces())
+            mesh.update_faces(mesh.unique_faces())
+            mesh.remove_unreferenced_vertices()
+        except Exception as e:  # noqa: BLE001
+            print(f"[trellis] WARN trimesh dedup partial ({e})", flush=True)
     if not mesh.is_watertight:
         try:
             import pymeshlab
