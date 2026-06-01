@@ -46,7 +46,10 @@ def _force_xformers_cutlass() -> None:
 
 
 def _trellis_geometry_mesh(m, max_faces, remesh=True,
-                           remesh_band=1.0, remesh_project=0.9, verbose=True):
+                           remesh_band=1.0,
+                           remesh_project=float(os.environ.get(
+                               "TRELLIS_REMESH_PROJECT", 0.95)),
+                           verbose=True):
     """Run ONLY the geometry half of o_voxel.postprocess.to_glb — the cumesh
     remesh + clean steps that build the clean watertight mesh — and read out
     verts/faces, SKIPPING the slow CPU xatlas UV unwrap + nvdiffrast texture

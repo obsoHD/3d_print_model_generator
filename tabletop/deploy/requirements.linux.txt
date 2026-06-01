@@ -14,6 +14,7 @@
 # torch at build time, so it must be installed with --no-build-isolation AFTER
 # torch (see Dockerfile). Putting it here would fail under pip build isolation.
 trimesh==4.10.1
+rtree            # spatial index for trimesh proximity (wall-thickness check)
 pymeshfix==0.18.1
 pyvista             # required: pymeshfix's .mesh accessor (finish_mini) builds a pyvista PolyData
 # hy3dshape (Hunyuan 2.1 shape path) imports these at load/run; unpinned so the
