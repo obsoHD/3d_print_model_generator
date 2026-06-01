@@ -131,13 +131,28 @@ def main() -> int:
             ms.add_mesh(pymeshlab.Mesh(vertex_matrix=mesh.vertices.astype("float64"),
                                        face_matrix=mesh.faces.astype("int32")))
             ms.meshing_decimation_quadric_edge_collapse(
-                targetfacenum=int(args.max_faces), preservenormal=True,
-                preservetopology=False, planarquadric=True)
+                targetfacenum=int(args.max_faces),
+                preservenormal=True,
+                preservetopology=True,    # was False — False punches non-manifold
+                                          # holes/spanning tris -> flat-fan artifacts
+                planarquadric=True,
+                qualitythr=0.35,          # reject sliver/long spanning collapses
+                optimalplacement=True,
+                autoremoveduplicatevertices=True)
+            # Tidy any degenerate geometry the collapse left behind.
+            for filt in ("meshing_remove_null_faces",
+                         "meshing_remove_duplicate_faces",
+                         "meshing_remove_duplicate_vertices",
+                         "meshing_remove_unreferenced_vertices"):
+                try:
+                    getattr(ms, filt)()
+                except Exception:  # noqa: BLE001 — filter name varies by version
+                    pass
             cm = ms.current_mesh()
             mesh = trimesh.Trimesh(vertices=cm.vertex_matrix(),
                                    faces=cm.face_matrix())
             print(f"[trellis] decimated -> {len(mesh.faces)} faces "
-                  f"(target {args.max_faces})", flush=True)
+                  f"(target {args.max_faces}, topology-preserving)", flush=True)
         except Exception as e:  # noqa: BLE001 — never block on decimation
             print(f"[trellis] WARN decimation failed ({e}); exporting raw mesh",
                   flush=True)
