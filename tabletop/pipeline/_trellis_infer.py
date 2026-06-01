@@ -52,9 +52,19 @@ def main() -> int:
     ap.add_argument("--lib",    required=True, help="TRELLIS.2 repo dir")
     ap.add_argument("--model",  default="microsoft/TRELLIS.2-4B")
     ap.add_argument("--seed",   type=int, default=42)
-    ap.add_argument("--max-faces", type=int, default=800_000,
-                    help="decimate above this (TRELLIS.2 emits ~4M faces which "
-                         "hang the repair/solidify gauntlet)")
+    ap.add_argument("--max-faces", type=int,
+                    default=int(os.environ.get("TRELLIS_MAX_FACES", 1_200_000)),
+                    help="decimate above this (raw is ~4M; gauntlet is now "
+                         "repair+seat only, so we can keep more detail)")
+    # QUALITY knobs — these use your VRAM headroom (the 4B model itself only
+    # needs ~4GB; the rest of your 32GB buys detail, not speed):
+    #   max_num_tokens — TRELLIS.2's primary quality dial (default 49152 ≈ 4GB).
+    #     Doubling to ~98k ≈ 8-12GB gives a denser/finer O-Voxel structure.
+    #   steps — diffusion sampling steps per stage (was 12; 25 = cleaner shape).
+    ap.add_argument("--max-tokens", type=int,
+                    default=int(os.environ.get("TRELLIS_TOKENS", 98_304)))
+    ap.add_argument("--steps", type=int,
+                    default=int(os.environ.get("TRELLIS_STEPS", 25)))
     args = ap.parse_args()
 
     sys.path.insert(0, args.lib)
@@ -80,8 +90,25 @@ def main() -> int:
 
     img = Image.open(args.image).convert("RGBA")
     _force_xformers_cutlass()   # Blackwell-safe sparse attention
-    print(f"[trellis] running ({args.image}, seed={args.seed})...", flush=True)
-    m = pipe.run(img)[0]   # O-Voxel mesh result
+    print(f"[trellis] running (seed={args.seed}, tokens={args.max_tokens}, "
+          f"steps={args.steps})...", flush=True)
+    # preprocess_image=False: we already removed the background upstream
+    # (concept_gen rembg), so skip TRELLIS.2's internal RMBG re-crop.
+    try:
+        m = pipe.run(
+            img,
+            seed=args.seed,
+            preprocess_image=False,
+            max_num_tokens=int(args.max_tokens),
+            sparse_structure_sampler_params={"steps": int(args.steps)},
+            shape_slat_sampler_params={"steps": int(args.steps)},
+            tex_slat_sampler_params={"steps": int(args.steps)},
+        )[0]
+    except TypeError as e:
+        # Param-name drift across TRELLIS.2 versions — fall back to a plain run
+        # so we still get a mesh (OOM is NOT caught here; lower TRELLIS_TOKENS).
+        print(f"[trellis] WARN quality params rejected ({e}); plain run", flush=True)
+        m = pipe.run(img, seed=args.seed, preprocess_image=False)[0]
 
     def _np(x):
         return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
