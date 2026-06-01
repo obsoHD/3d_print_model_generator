@@ -94,7 +94,10 @@ RUN git clone --depth 1 https://github.com/HKUST-SAIL/CraftsMan3D.git /app/table
 #     (An earlier attempt installed the xformers/spconv/kaolin STACK into the
 #     shared env and downgraded a core dep — that is gone. The ext builds below
 #     are the SAFE pattern: source compiles only, --no-deps, non-fatal.) ---
-RUN git clone --depth 1 https://github.com/microsoft/TRELLIS.2.git /app/tabletop/TRELLIS \
+# --recurse-submodules is REQUIRED: o-voxel/third_party/eigen is a submodule;
+# without it the o-voxel CUDA build fails (missing Eigen headers).
+RUN git clone --depth 1 --recurse-submodules --shallow-submodules \
+        https://github.com/microsoft/TRELLIS.2.git /app/tabletop/TRELLIS \
  && git clone --depth 1 https://github.com/Stable-X/Stable3DGen.git /app/tabletop/Stable3DGen
 
 # --- TRELLIS.2 custom CUDA extensions (cumesh / o-voxel / flexgemm + nvdiffrast/
