@@ -53,6 +53,38 @@ OUT_PREVIEWS = TABLETOP_ROOT / "outputs" / "previews"
 for d in (OUT_CONCEPTS, OUT_MESHES, OUT_STL, OUT_PREVIEWS):
     d.mkdir(parents=True, exist_ok=True)
 
+
+def _stream(cmd, label, timeout=1500, cwd=None, env=None):
+    """Run a subprocess streaming its stdout LIVE into the run log (so the finish
+    step isn't a black box) with elapsed timing. Returns (returncode, tail)."""
+    import collections
+    import subprocess
+    import time as _t
+    print(f"  {label} — starting...", flush=True)
+    t0 = _t.monotonic()
+    tail = collections.deque(maxlen=60)
+    try:
+        proc = subprocess.Popen(cmd, cwd=cwd, env=env, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                bufsize=1)
+    except Exception as e:  # noqa: BLE001
+        print(f"  {label} — could not start: {e}", flush=True)
+        return 1, []
+    try:
+        for raw in proc.stdout:
+            ln = raw.rstrip("\n")
+            if ln.strip():
+                print(f"        {ln}", flush=True)
+                tail.append(ln)
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        print(f"  {label} — TIMED OUT after {timeout}s", flush=True)
+        return 124, list(tail)
+    dt = _t.monotonic() - t0
+    print(f"  {label} — done in {dt:.1f}s (exit {proc.returncode})", flush=True)
+    return proc.returncode, list(tail)
+
 # Engine registry — extend by importing more clients here
 #   parametric -> build123d CAD (terrain: watertight by construction, no AI)
 #   hunyuan21  -> Hunyuan3D 2.1 (best neural — minis / organic)
@@ -581,19 +613,18 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
                 else:
                     gauntlet_args = []
                     print(f"  [2b/4] mesh gauntlet (repair + orient + seat + solidify)...")
-                proc = subprocess.run(
+                rc, _gtail = _stream(
                     [PY, str(gauntlet_py),
                      "--input",    str(mesh_glb),
                      "--output",   str(repaired_glb),
                      "--scale-mm", str(scale_mm), *gauntlet_args],
-                    capture_output=True, text=True, timeout=1500)
-                if proc.returncode == 0 and repaired_glb.exists():
+                    label="[2b/4] mesh gauntlet", timeout=1500)
+                if rc == 0 and repaired_glb.exists():
                     mesh_glb = repaired_glb     # use the gauntlet output downstream
                     print(f"        -> {repaired_glb.name} (gauntleted, printable)")
                 else:
-                    tail = proc.stderr[-400:] if proc.stderr else proc.stdout[-400:]
-                    print(f"  [2b/4] gauntlet failed (exit {proc.returncode}); "
-                          f"continuing with raw GLB. Tail:\n{tail}")
+                    print(f"  [2b/4] gauntlet failed (exit {rc}); "
+                          f"continuing with raw GLB.")
             except Exception as e:
                 print(f"  [2b/4] gauntlet skipped: {e}")
         if engine in ("trellis", "hi3dgen"):
@@ -603,12 +634,19 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             # and mangles the topology (folded blobs), and PyMeshLab detail-
             # enhance re-fragments voxel meshes. So export the clean gauntlet
             # mesh straight to STL — no remesh, no unsharp.
+            import time as _t
             import trimesh as _tm
-            print("  [3/4] direct STL export (clean watertight mesh — no voxel remesh)...")
+            print("  [3/4] direct STL export (clean watertight mesh — no voxel remesh)...", flush=True)
+            _t0 = _t.monotonic()
             _m = _tm.load(str(mesh_glb), force="mesh")
+            print(f"        loaded gauntlet mesh: {len(_m.faces)} faces, "
+                  f"watertight={_m.is_watertight}, "
+                  f"dims_mm={[round(float(x),1) for x in _m.extents]}", flush=True)
             _m.export(str(stl_path))
             os.environ["SKIP_DETAIL_ENHANCE"] = "1"
-            print(f"        -> {stl_path.name} ({len(_m.faces)} faces, direct)")
+            print(f"        -> {stl_path.name} "
+                  f"({stl_path.stat().st_size/1e6:.1f} MB, {len(_m.faces)} faces, "
+                  f"direct, {_t.monotonic()-_t0:.1f}s)", flush=True)
         else:
             # The gauntlet already solidified and oriented; tell blender_cleanup
             # to skip its own Solidify rescue and just do final scale+export.
@@ -634,15 +672,13 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             os.environ["SKIP_DETAIL_ENHANCE"] = "1"
         if os.environ.get("SKIP_DETAIL_ENHANCE", "0") != "1":
             try:
-                import subprocess
                 inner = HERE / "detail_enhance.py"
-                proc = subprocess.run(
-                    [PY, str(inner), "--input", str(stl_path)],
-                    capture_output=True, text=True, timeout=120)
-                if proc.returncode == 0:
+                rc, _ = _stream([PY, str(inner), "--input", str(stl_path)],
+                                label="[3b/4] PyMeshLab detail enhance", timeout=120)
+                if rc == 0:
                     print("  [3b/4] detail enhancement applied (PyMeshLab)")
                 else:
-                    print(f"  [3b/4] detail enhance failed (exit {proc.returncode}); "
+                    print(f"  [3b/4] detail enhance failed (exit {rc}); "
                           f"continuing without it")
             except Exception as e:
                 print(f"  [3b/4] detail enhance skipped: {e}")
@@ -659,16 +695,14 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
         # PASS/FAIL + reasons so failures are visible, not silent.
         validated = None
         try:
-            import subprocess
-            vproc = subprocess.run(
+            _stream(
                 [PY, str(HERE / "slicer_validate.py"),
                  "--input", str(stl_path), "--printer", printer],
-                capture_output=True, text=True, timeout=400)
+                label="[4b/4] slicer validation (Bambu / PrusaSlicer)", timeout=400)
             vfile = stl_path.with_suffix(".validate.json")
             if vfile.exists():
                 vdata = json.loads(vfile.read_text(encoding="utf-8"))
                 validated = bool(vdata.get("PASS"))
-                tail = (vproc.stdout or "").strip().splitlines()[-2:]
                 print(f"  [4b/4] slicer validation: "
                       f"{'PASS' if validated else 'FAIL'}"
                       + (f" — {vdata.get('reasons')}" if not validated else ""))

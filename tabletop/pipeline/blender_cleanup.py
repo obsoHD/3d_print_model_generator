@@ -64,14 +64,32 @@ def run(input_mesh: str, out_stl: str, printer: str = "resin",
         "--scale-mm", str(scale_mm),
     ]
     cmd = [blender, "--background", "--python", script, "--"] + args
-    print(f"  [blender] {' '.join([Path(blender).name] + cmd[1:5])} ...")
+    print(f"  [blender] {' '.join([Path(blender).name] + cmd[1:5])} ...", flush=True)
     # Pixal3D outputs are ~700K verts; Solidify + VoxelRemesh on that takes
     # 5-15 min vs HY3D's ~2 min. 900s timeout covers both engines.
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    # Stream Blender's stdout LIVE so the finish step isn't a black box.
+    import collections
+    import time as _t
+    _t0 = _t.monotonic()
+    tail = collections.deque(maxlen=80)
+    proc = subprocess.Popen(cmd, text=True, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, bufsize=1)
+    try:
+        for raw in proc.stdout:
+            ln = raw.rstrip("\n")
+            if ln.strip():
+                print(f"        [blender] {ln}", flush=True)
+                tail.append(ln)
+        proc.wait(timeout=900)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        raise RuntimeError("Blender cleanup timed out after 900s")
+    print(f"  [blender] done in {_t.monotonic()-_t0:.1f}s (exit {proc.returncode})",
+          flush=True)
     if proc.returncode != 0:
         raise RuntimeError(
             f"Blender cleanup failed (exit {proc.returncode}).\n"
-            f"stderr tail:\n{proc.stderr[-1500:]}"
+            f"tail:\n" + "\n".join(list(tail)[-25:])
         )
     # The inner half writes a sidecar JSON next to out_stl
     info_path = Path(out_stl).with_suffix(".cleanup.json")
