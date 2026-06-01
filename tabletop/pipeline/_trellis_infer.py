@@ -113,11 +113,11 @@ def main() -> int:
     def _np(x):
         return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
     mesh = trimesh.Trimesh(vertices=_np(m.vertices), faces=_np(m.faces))
-    # TRELLIS.2 emits the model Y-up (glTF convention); our gauntlet + slicer are
-    # Z-up. Without this the figure ends up lying on its side and its base disc
-    # stands vertical. Rotate Y-up -> Z-up so it stands upright.
+    # TRELLIS.2 emits the model Y-up (glTF convention) with up = -Y; our gauntlet
+    # + slicer are Z-up. Rotate -90 deg about X so the figure stands upright
+    # (+90 came out upside down -> the model's head is at -Y).
     mesh.apply_transform(
-        trimesh.transformations.rotation_matrix(np.pi / 2.0, [1, 0, 0]))
+        trimesh.transformations.rotation_matrix(-np.pi / 2.0, [1, 0, 0]))
     print(f"[trellis] raw mesh: {len(mesh.faces)} faces (rotated Y-up->Z-up)",
           flush=True)
 
