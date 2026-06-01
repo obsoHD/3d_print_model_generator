@@ -59,6 +59,7 @@ tensorboardX    # CraftsMan logger
 easydict
 igraph
 zstandard       # o_voxel .vxz voxel I/O (declared dep, skipped by --no-deps build)
+kornia          # BiRefNet (StableNormal bg-removal inside Hi3DGen) image ops
 
 # --- image / background removal ---
 pillow
