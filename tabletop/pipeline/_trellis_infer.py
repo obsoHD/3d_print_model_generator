@@ -330,6 +330,14 @@ def main() -> int:
             except Exception: pass  # noqa: BLE001
         try: ms.meshing_remove_null_faces()
         except Exception: pass  # noqa: BLE001
+        # Light Taubin smooth (volume-preserving): rounds the flat hole-fill
+        # patches into the surrounding surface AND melts the sliver specks.
+        # TRELLIS_SMOOTH iterations (0 = off / max detail, higher = smoother).
+        _sm = int(os.environ.get("TRELLIS_SMOOTH", "3"))
+        if _sm > 0:
+            try: ms.apply_coord_taubin_smoothing(stepsmoothnum=_sm)
+            except Exception: pass  # noqa: BLE001
+            merged = True
         if merged:
             cm = ms.current_mesh()
             cand = trimesh.Trimesh(vertices=cm.vertex_matrix(),
