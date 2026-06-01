@@ -124,15 +124,23 @@ function _readLogTail(maxBytes = 4096) {
 function _deriveSubstage(procRunning, cmdLines, logTail) {
   // Process list gives the gross signal; the run-log tail gives the substage.
   const hasHy     = /_hunyuan(21|2mv)_infer\.py|hy3d_infer\.py/i.test(cmdLines);
+  const hasTrellis= /_trellis_infer\.py/i.test(cmdLines);
+  const hasHi3d   = /_hi3dgen_infer\.py/i.test(cmdLines);
+  const hasTripo  = /_triposg_infer\.py/i.test(cmdLines);
+  const hasCraft  = /_craftsman_infer\.py/i.test(cmdLines);
   const hasConcept= /_concept_infer\.py/i.test(cmdLines);
   const hasFinish = /finish_mini\.py|mesh_gauntlet\.py|detail_enhance\.py/i.test(cmdLines);
   const hasValid  = /slicer_validate\.py/i.test(cmdLines);
   const hasOrch   = /orchestrate\.py/i.test(cmdLines);
-  if (!hasOrch && !hasHy && !hasConcept && !hasFinish && !hasValid) {
+  const hasNeural = hasHy || hasTrellis || hasHi3d || hasTripo || hasCraft;
+  if (!hasOrch && !hasNeural && !hasConcept && !hasFinish && !hasValid) {
     return { running: false, stage: null, substep: '' };
   }
   const lines = (logTail || '').split(/\r?\n/).filter(Boolean);
   const last  = lines.slice(-12).join('\n').toLowerCase();
+  // Live progress % from the most recent tqdm bar (e.g. "Sampling ... 50%|").
+  const pctM = last.match(/(\d{1,3})%\s*\|/g);
+  const pct  = pctM ? pctM[pctM.length - 1].match(/(\d{1,3})%/)[1] + '%' : '';
 
   // Order matters — latest stage wins.
   if (last.includes('=== done')) {
@@ -154,18 +162,56 @@ function _deriveSubstage(procRunning, cmdLines, logTail) {
     else if (/orient|seat|tweaker/.test(last)) sub = 'auto-orient + seat to bed';
     return { running: true, stage: 'finish', substep: sub };
   }
-  // 3) mesh — Hunyuan shape generation (single or multi-view)
-  if (hasHy ||
-      /\[2\/4\] mesh|\[1\/3\] multi-view|\[hunyuan2?1?mv?\]|shape (diffusion|pipeline)|volume decoding|loading shape pipeline|flashvdm|full gpu load|octree/.test(last)) {
-    let sub = 'Hunyuan 3D shape generation';
-    if (/loading shape pipeline|cpu first|loading.*weights|downloading/.test(last))
-      sub = 'loading / downloading Hunyuan model (first run is slow)';
-    else if (/full gpu load/.test(last))  sub = 'loading model onto the GPU';
-    else if (/flashvdm/.test(last))       sub = 'FlashVDM enabled';
-    else if (/preparing image|background/.test(last)) sub = 'preparing input image';
-    else if (/shape diffusion|sampling|steps=/.test(last)) sub = 'diffusion sampling (shape)';
-    else if (/volume decoding|octree/.test(last)) sub = 'volume decode → mesh (octree 768)';
-    else if (/saved/.test(last))          sub = 'saving mesh';
+  // 3) mesh — neural shape generation (engine-aware). Latest matching line wins.
+  const meshHit = hasNeural ||
+    /\[2\/4\] mesh|\[1\/3\] multi-view|\[(hunyuan2?1?mv?|trellis|hi3dgen|triposg|craftsman)\]|sampling (sparse structure|shape slat|texture slat)|estimating surface normals|shape (diffusion|pipeline)|volume decoding|loading (shape|geometry)? ?pipeline|loading pipeline|flashvdm|full gpu load|octree|o-?voxel|raw mesh|decimat/i.test(last);
+  if (meshHit) {
+    const p = pct ? ' · ' + pct : '';
+    let sub;
+    // ---- TRELLIS.2 (4B O-Voxel) ----
+    if (hasTrellis || /\[trellis\]|trellis\.2|sampling (sparse structure|shape slat|texture slat)/i.test(last)) {
+      sub = 'TRELLIS.2 — starting';
+      if (/loading pipeline|downloading|\.safetensors|resolve\/main|dinov|encoder|rmbg|birefnet/i.test(last))
+        sub = 'TRELLIS.2 — loading / downloading 4B model + encoders (first run is slow)';
+      else if (/sampling sparse structure/i.test(last)) sub = 'TRELLIS.2 — sampling sparse structure (1/3)' + p;
+      else if (/sampling shape slat/i.test(last))       sub = 'TRELLIS.2 — sampling shape (2/3)' + p;
+      else if (/sampling texture slat/i.test(last))     sub = 'TRELLIS.2 — sampling texture (3/3)' + p;
+      else if (/raw mesh|decimat/i.test(last))          sub = 'TRELLIS.2 — building + decimating mesh';
+      else if (/cutlass|forced xformers/i.test(last))   sub = 'TRELLIS.2 — preparing attention (Blackwell-safe)';
+      else if (/saved/i.test(last))                     sub = 'TRELLIS.2 — saving mesh';
+    }
+    // ---- Hi3DGen (normal-bridging) ----
+    else if (hasHi3d || /\[hi3dgen\]/i.test(last)) {
+      sub = 'Hi3DGen — starting';
+      if (/loading geometry pipeline|downloading|resolve\/main|dinov/i.test(last))
+        sub = 'Hi3DGen — loading / downloading models (first run is slow)';
+      else if (/stablenormal|estimating surface normals|normal predictor/i.test(last)) sub = 'Hi3DGen — estimating surface normals';
+      else if (/sampling/i.test(last))  sub = 'Hi3DGen — normal → geometry diffusion' + p;
+      else if (/saved/i.test(last))     sub = 'Hi3DGen — saving mesh';
+    }
+    // ---- TripoSG (watertight SDF) ----
+    else if (hasTripo || /\[triposg\]/i.test(last)) {
+      sub = 'TripoSG — diffusion → watertight mesh' + p;
+      if (/downloading|loading/i.test(last)) sub = 'TripoSG — loading model';
+      else if (/saved/i.test(last))          sub = 'TripoSG — saving mesh';
+    }
+    // ---- CraftsMan3D ----
+    else if (hasCraft || /\[craftsman\]/i.test(last)) {
+      sub = 'CraftsMan3D — coarse 3D + normal refiner' + p;
+      if (/downloading|loading/i.test(last)) sub = 'CraftsMan3D — loading model';
+    }
+    // ---- Hunyuan (single / multi-view) ----
+    else {
+      sub = 'Hunyuan 3D shape generation';
+      if (/loading shape pipeline|cpu first|loading.*weights|downloading/.test(last))
+        sub = 'loading / downloading Hunyuan model (first run is slow)';
+      else if (/full gpu load/.test(last))  sub = 'loading model onto the GPU';
+      else if (/flashvdm/.test(last))       sub = 'FlashVDM enabled';
+      else if (/preparing image|background/.test(last)) sub = 'preparing input image';
+      else if (/shape diffusion|sampling|steps=/.test(last)) sub = 'diffusion sampling (shape)' + p;
+      else if (/volume decoding|octree/.test(last)) sub = 'volume decode → mesh (octree 768)';
+      else if (/saved/.test(last))          sub = 'saving mesh';
+    }
     return { running: true, stage: 'mesh', substep: sub };
   }
   // 2) bg removal
