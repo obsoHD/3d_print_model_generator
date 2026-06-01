@@ -596,18 +596,32 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
                           f"continuing with raw GLB. Tail:\n{tail}")
             except Exception as e:
                 print(f"  [2b/4] gauntlet skipped: {e}")
-        # The gauntlet already solidified and oriented; tell blender_cleanup
-        # to skip its own Solidify rescue and just do final scale+export.
-        os.environ.pop("SOLIDIFY_MODE", None)
-        import blender_cleanup
-        print("  [3/4] Blender cleanup + STL export...")
-        blender_cleanup.run(
-            input_mesh=str(mesh_glb),
-            out_stl=str(stl_path),
-            printer=printer,
-            scale_mm=scale_mm,
-        )
-        print(f"        -> {stl_path.name}")
+        if engine in ("trellis", "hi3dgen"):
+            # TRELLIS.2 / Hi3DGen are ALREADY watertight + high-detail, and the
+            # gauntlet already scaled-to-mm + seated-to-bed. Blender's voxel-
+            # remesh (built to seal gappy Hunyuan SDF meshes) DESTROYS the detail
+            # and mangles the topology (folded blobs), and PyMeshLab detail-
+            # enhance re-fragments voxel meshes. So export the clean gauntlet
+            # mesh straight to STL — no remesh, no unsharp.
+            import trimesh as _tm
+            print("  [3/4] direct STL export (clean watertight mesh — no voxel remesh)...")
+            _m = _tm.load(str(mesh_glb), force="mesh")
+            _m.export(str(stl_path))
+            os.environ["SKIP_DETAIL_ENHANCE"] = "1"
+            print(f"        -> {stl_path.name} ({len(_m.faces)} faces, direct)")
+        else:
+            # The gauntlet already solidified and oriented; tell blender_cleanup
+            # to skip its own Solidify rescue and just do final scale+export.
+            os.environ.pop("SOLIDIFY_MODE", None)
+            import blender_cleanup
+            print("  [3/4] Blender cleanup + STL export...")
+            blender_cleanup.run(
+                input_mesh=str(mesh_glb),
+                out_stl=str(stl_path),
+                printer=printer,
+                scale_mm=scale_mm,
+            )
+            print(f"        -> {stl_path.name}")
 
         # ---- 3b. Detail enhancement (PyMeshLab) ----
         # Sharpens HY3D's soft surface via normal-unsharp + edge-preserving

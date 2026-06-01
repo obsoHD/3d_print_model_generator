@@ -113,7 +113,13 @@ def main() -> int:
     def _np(x):
         return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
     mesh = trimesh.Trimesh(vertices=_np(m.vertices), faces=_np(m.faces))
-    print(f"[trellis] raw mesh: {len(mesh.faces)} faces", flush=True)
+    # TRELLIS.2 emits the model Y-up (glTF convention); our gauntlet + slicer are
+    # Z-up. Without this the figure ends up lying on its side and its base disc
+    # stands vertical. Rotate Y-up -> Z-up so it stands upright.
+    mesh.apply_transform(
+        trimesh.transformations.rotation_matrix(np.pi / 2.0, [1, 0, 0]))
+    print(f"[trellis] raw mesh: {len(mesh.faces)} faces (rotated Y-up->Z-up)",
+          flush=True)
 
     # TRELLIS.2 emits ~4M faces — the repair/orient/solidify gauntlet effectively
     # hangs on meshes that dense. Decimate to a printable target (quality is
