@@ -569,9 +569,15 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
                     mini_vox = max(0.16, round(scale_mm / 180.0, 2))
                     gauntlet_args = ["--no-orient", "--force-voxel", str(mini_vox)]
                     print(f"  [2b/4] mesh gauntlet (mini-heal voxel {mini_vox}mm)...")
-                elif engine == "hunyuan21":
+                elif engine in ("hunyuan21", "trellis", "hi3dgen"):
+                    # Clean, watertight, DETAIL engines. TRELLIS.2 (O-Voxel) and
+                    # Hi3DGen are watertight by construction, so the voxel-remesh
+                    # solidify only smears detail, and Tweaker auto-orient tips
+                    # busts/figures onto their back (→ the giant flat oval base +
+                    # tilt). Keep the engine's upright orientation; just drop
+                    # floaters + repair + seat to bed. No orient, no solidify.
                     gauntlet_args = ["--no-orient", "--no-solidify"]
-                    print(f"  [2b/4] mesh gauntlet (clean engine; drop floaters + repair + seat only)...")
+                    print(f"  [2b/4] mesh gauntlet (clean detail engine; drop floaters + repair + seat only)...")
                 else:
                     gauntlet_args = []
                     print(f"  [2b/4] mesh gauntlet (repair + orient + seat + solidify)...")
