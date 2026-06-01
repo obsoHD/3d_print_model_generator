@@ -112,63 +112,74 @@ def main() -> int:
 
     def _np(x):
         return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
-    mesh = trimesh.Trimesh(vertices=_np(m.vertices), faces=_np(m.faces))
-    # TRELLIS.2 emits the model Y-up (glTF convention) with up = -Y; our gauntlet
-    # + slicer are Z-up. Rotate -90 deg about X so the figure stands upright
-    # (+90 came out upside down -> the model's head is at -Y).
+    # === Build the printable mesh ===
+    # PREFER TRELLIS.2's OFFICIAL postprocessor. o_voxel.postprocess.to_glb with
+    # remesh=True turns the raw dual-grid voxel output into a CLEAN, watertight,
+    # decimated mesh. Taking m.vertices/m.faces RAW (our old path) keeps the dual
+    # grid's non-manifold regions, which the gauntlet's hole-filling then fans
+    # into flat triangles -> the "broken" slicer mesh. to_glb needs nvdiffrast/
+    # cumesh/flex_gemm (built as TRELLIS exts); if unavailable we fall back.
+    mesh = None
+    try:
+        import o_voxel
+        print(f"[trellis] o_voxel official remesh -> clean watertight mesh "
+              f"(target {args.max_faces} faces)...", flush=True)
+        glb = o_voxel.postprocess.to_glb(
+            vertices=m.vertices, faces=m.faces,
+            attr_volume=m.attrs, coords=m.coords, attr_layout=m.layout,
+            voxel_size=m.voxel_size, aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
+            decimation_target=int(args.max_faces),
+            texture_size=512, remesh=True, remesh_band=1.0, remesh_project=0.9,
+            verbose=True)
+        mesh = glb if isinstance(glb, trimesh.Trimesh) else glb.dump(concatenate=True)
+        print(f"[trellis] official remesh OK: {len(mesh.faces)} faces, "
+              f"watertight={mesh.is_watertight}", flush=True)
+    except Exception as e:  # noqa: BLE001 — exts missing/old; use the fallback
+        print(f"[trellis] WARN o_voxel remesh unavailable ({e}); "
+              f"raw + pymeshlab decimate fallback", flush=True)
+        mesh = None
+
+    if mesh is None:
+        mesh = trimesh.Trimesh(vertices=_np(m.vertices), faces=_np(m.faces))
+        if len(mesh.faces) > args.max_faces:
+            try:
+                import pymeshlab
+                ms = pymeshlab.MeshSet()
+                ms.add_mesh(pymeshlab.Mesh(
+                    vertex_matrix=mesh.vertices.astype("float64"),
+                    face_matrix=mesh.faces.astype("int32")))
+                for _ps in (
+                        dict(targetfacenum=int(args.max_faces), preservenormal=True,
+                             preservetopology=True, planarquadric=True,
+                             qualitythr=0.35, optimalplacement=True),
+                        dict(targetfacenum=int(args.max_faces), preservenormal=True,
+                             preservetopology=True),
+                        dict(targetfacenum=int(args.max_faces))):
+                    try:
+                        ms.meshing_decimation_quadric_edge_collapse(**_ps)
+                        break
+                    except Exception:  # noqa: BLE001
+                        continue
+                for filt in ("meshing_remove_null_faces",
+                             "meshing_remove_duplicate_faces",
+                             "meshing_remove_duplicate_vertices",
+                             "meshing_remove_unreferenced_vertices"):
+                    try:
+                        getattr(ms, filt)()
+                    except Exception:  # noqa: BLE001
+                        pass
+                cm = ms.current_mesh()
+                mesh = trimesh.Trimesh(vertices=cm.vertex_matrix(),
+                                       faces=cm.face_matrix())
+                print(f"[trellis] decimated -> {len(mesh.faces)} faces", flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"[trellis] WARN decimation failed ({e}); raw mesh", flush=True)
+
+    # Orientation: TRELLIS.2 up = -Y (glTF); our gauntlet + slicer are Z-up.
     mesh.apply_transform(
         trimesh.transformations.rotation_matrix(-np.pi / 2.0, [1, 0, 0]))
-    print(f"[trellis] raw mesh: {len(mesh.faces)} faces (rotated Y-up->Z-up)",
-          flush=True)
-
-    # TRELLIS.2 emits ~4M faces — the repair/orient/solidify gauntlet effectively
-    # hangs on meshes that dense. Decimate to a printable target (quality is
-    # unaffected at mini scale; this is what TRELLIS.2's own to_glb does on export).
-    if len(mesh.faces) > args.max_faces:
-        try:
-            import pymeshlab
-            ms = pymeshlab.MeshSet()
-            ms.add_mesh(pymeshlab.Mesh(vertex_matrix=mesh.vertices.astype("float64"),
-                                       face_matrix=mesh.faces.astype("int32")))
-            # Try the full clean-decimation params; if any param name has drifted
-            # across pymeshlab versions, retry with progressively simpler sets so
-            # we NEVER fall through to exporting the full multi-million-face mesh.
-            _param_sets = [
-                dict(targetfacenum=int(args.max_faces), preservenormal=True,
-                     preservetopology=True, planarquadric=True,
-                     qualitythr=0.35, optimalplacement=True),
-                dict(targetfacenum=int(args.max_faces), preservenormal=True,
-                     preservetopology=True),
-                dict(targetfacenum=int(args.max_faces)),
-            ]
-            _ok = False
-            for _ps in _param_sets:
-                try:
-                    ms.meshing_decimation_quadric_edge_collapse(**_ps)
-                    _ok = True
-                    break
-                except Exception as _de:  # noqa: BLE001 — param drift; try simpler
-                    print(f"[trellis] decim params {list(_ps)} rejected ({_de}); "
-                          f"retrying simpler", flush=True)
-            if not _ok:
-                raise RuntimeError("all decimation param sets failed")
-            # Tidy any degenerate geometry the collapse left behind.
-            for filt in ("meshing_remove_null_faces",
-                         "meshing_remove_duplicate_faces",
-                         "meshing_remove_duplicate_vertices",
-                         "meshing_remove_unreferenced_vertices"):
-                try:
-                    getattr(ms, filt)()
-                except Exception:  # noqa: BLE001 — filter name varies by version
-                    pass
-            cm = ms.current_mesh()
-            mesh = trimesh.Trimesh(vertices=cm.vertex_matrix(),
-                                   faces=cm.face_matrix())
-            print(f"[trellis] decimated -> {len(mesh.faces)} faces "
-                  f"(target {args.max_faces}, topology-preserving)", flush=True)
-        except Exception as e:  # noqa: BLE001 — never block on decimation
-            print(f"[trellis] WARN decimation failed ({e}); exporting raw mesh",
-                  flush=True)
+    print(f"[trellis] final mesh: {len(mesh.faces)} faces, "
+          f"watertight={mesh.is_watertight} (Z-up)", flush=True)
 
     out = Path(args.output); out.parent.mkdir(parents=True, exist_ok=True)
     mesh.export(str(out))
