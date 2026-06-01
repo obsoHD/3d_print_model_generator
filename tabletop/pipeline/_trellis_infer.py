@@ -288,15 +288,21 @@ def main() -> int:
             ms = pymeshlab.MeshSet()
             ms.add_mesh(pymeshlab.Mesh(vertex_matrix=mesh.vertices.astype("float64"),
                                        face_matrix=mesh.faces.astype("int32")))
-            try: ms.meshing_close_holes(maxholesize=40)
-            except Exception: pass  # noqa: BLE001 — skip if unsupported
+            # Close holes up to ~300 boundary edges — catches the medium holes in
+            # face/hair, while still leaving any truly huge opening alone (no fan).
+            for mhs in (300, 100, 40):
+                try: ms.meshing_close_holes(maxholesize=mhs); break
+                except Exception: continue  # noqa: BLE001
             cm = ms.current_mesh()
             mesh = trimesh.Trimesh(vertices=cm.vertex_matrix(),
                                    faces=cm.face_matrix(), process=False)
-            print(f"[trellis] hole-close: {len(mesh.faces)} faces, "
-                  f"watertight={mesh.is_watertight}", flush=True)
         except Exception as e:  # noqa: BLE001
-            print(f"[trellis] WARN hole-close skipped ({e})", flush=True)
+            print(f"[trellis] WARN pymeshlab hole-close skipped ({e})", flush=True)
+        # Backup: trimesh's own simple-hole fill catches any small loops left.
+        try: trimesh.repair.fill_holes(mesh)
+        except Exception: pass  # noqa: BLE001
+        print(f"[trellis] hole-close: {len(mesh.faces)} faces, "
+              f"watertight={mesh.is_watertight}", flush=True)
     try:
         trimesh.repair.fix_winding(mesh)
         trimesh.repair.fix_normals(mesh)
