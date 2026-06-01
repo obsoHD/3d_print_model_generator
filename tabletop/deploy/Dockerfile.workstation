@@ -128,6 +128,21 @@ RUN --mount=type=cache,target=/root/.cache/pip set +e; \
         || echo "WARN: nvdiffrec build failed"; \
     rm -rf /tmp/ext; true
 
+# --- Hi3DGen sparse stack (xformers + spconv toolchain). Hi3DGen's SPARSE
+#     attention is xformers-only (no sdpa fallback like the dense path), and its
+#     sparse convs need spconv + its codegen deps (pccm/cumm). xformers is pinned
+#     to the torch-2.8 build and installed --no-deps so it CANNOT change torch.
+#     spconv-cu126 NVRTC-compiles the sm_120 (Blackwell) kernel at first use.
+#     pccm pulls only pure-python codegen utilities (safe). Non-fatal. ---
+RUN --mount=type=cache,target=/root/.cache/pip set +e; \
+    ( python -m pip install --no-deps xformers==0.0.32.post2 ) \
+        || echo "WARN: xformers install failed (Hi3DGen sparse attn unavailable)"; \
+    ( python -m pip install --no-deps spconv-cu126 cumm-cu126 ) \
+        || echo "WARN: spconv/cumm install failed"; \
+    ( python -m pip install pccm ) \
+        || echo "WARN: pccm install failed (spconv JIT unavailable)"; \
+    true
+
 # pymeshlab's Qt plugins (used by hy3dshape postprocessors) link libOpenGL.so.0
 # et al. Install the GL runtime libs as a late layer so the heavy steps above
 # stay cached. Without these, pymeshlab imports but every filter fails to load.
