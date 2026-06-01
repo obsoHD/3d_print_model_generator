@@ -375,6 +375,32 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
 .v-cbtn:hover{color:var(--text);background:rgba(255,255,255,.06)}
 .v-cbtn.on{color:var(--accent)}
 
+/* ── Viewer look sidebar ───────────────────────────────────────────── */
+.v-panel{position:absolute;top:10px;right:10px;width:202px;max-height:calc(100% - 20px);
+  overflow-y:auto;background:rgba(15,23,42,.92);border:1px solid var(--line2);
+  border-radius:12px;padding:12px;backdrop-filter:blur(10px);
+  display:none;flex-direction:column;gap:7px;z-index:6;
+  box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.v-panel.open{display:flex}
+.v-sec-t{font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--dim2);margin-top:4px}
+.v-sec-t:first-child{margin-top:0}
+.v-presets{display:flex;flex-wrap:wrap;gap:4px}
+.v-preset{flex:1 1 auto;padding:5px 7px;font-size:10px;font-weight:600;border-radius:6px;
+  background:var(--bg2);border:1px solid var(--line);color:var(--dim);cursor:pointer;
+  transition:all .15s;white-space:nowrap}
+.v-preset:hover{border-color:var(--accent);color:var(--text)}
+.v-preset.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.v-slab{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  font-size:10px;color:var(--dim);font-weight:600}
+.v-slab input[type=range]{flex:0 0 96px;accent-color:var(--accent);height:3px;cursor:pointer}
+.v-sws{display:flex;gap:6px;flex-wrap:wrap}
+.v-sw{width:26px;height:26px;border-radius:6px;cursor:pointer;border:2px solid transparent;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.3);transition:transform .1s}
+.v-sw:hover{transform:scale(1.1)}
+.v-sw.on{border-color:var(--accent)}
+@media(max-width:860px){ .v-panel{width:170px} }
+
 /* ── OUTPUT FILES + HISTORY ────────────────────────────────────────── */
 .out-list{display:flex;flex-direction:column;gap:6px;min-width:0}
 .out-row{display:flex;align-items:center;gap:8px;padding:9px 10px;min-width:0;
@@ -802,6 +828,47 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
           <button class="v-cbtn" id="v-wire" onclick="vWire()">
             <svg class="ico" style="width:11px;height:11px;vertical-align:-1px"><use href="#i-wire"/></svg> Wire</button>
           <button class="v-cbtn" onclick="vFit()">⤢ Fit</button>
+          <button class="v-cbtn" onclick="toggleVPanel()">☀ Look</button>
+        </div>
+
+        <!-- Viewer look sidebar: lighting / color / background -->
+        <div class="v-panel" id="v-panel">
+          <div class="v-sec-t">Lighting</div>
+          <div class="v-presets">
+            <button class="v-preset on" data-preset="studio"   onclick="lightPreset('studio')">Studio</button>
+            <button class="v-preset"    data-preset="soft"     onclick="lightPreset('soft')">Soft</button>
+            <button class="v-preset"    data-preset="dramatic" onclick="lightPreset('dramatic')">Dramatic</button>
+            <button class="v-preset"    data-preset="top"      onclick="lightPreset('top')">Top</button>
+            <button class="v-preset"    data-preset="rim"      onclick="lightPreset('rim')">Rim</button>
+          </div>
+          <label class="v-slab">Light angle <input id="vc-az" type="range" min="0" max="360" value="45" oninput="setLight('az',this.value)"></label>
+          <label class="v-slab">Light height <input id="vc-el" type="range" min="5" max="89" value="55" oninput="setLight('el',this.value)"></label>
+          <label class="v-slab">Key bright <input id="vc-key" type="range" min="0" max="3" step="0.05" value="1.3" oninput="setLight('key',this.value)"></label>
+          <label class="v-slab">Ambient <input id="vc-amb" type="range" min="0" max="1.6" step="0.05" value="0.6" oninput="setLight('amb',this.value)"></label>
+
+          <div class="v-sec-t">Model colour</div>
+          <div class="v-sws">
+            <button class="v-sw on" style="background:#9aa4b2" onclick="setMatColor('#9aa4b2',this)" title="Grey"></button>
+            <button class="v-sw" style="background:#f2eaea" onclick="setMatColor('#f2eaea',this)" title="Resin white"></button>
+            <button class="v-sw" style="background:#2e8b57" onclick="setMatColor('#2e8b57',this)" title="Slicer green"></button>
+            <button class="v-sw" style="background:#c18044" onclick="setMatColor('#c18044',this)" title="Bronze"></button>
+            <button class="v-sw" style="background:#8a8d8a" onclick="setMatColor('#8a8d8a',this)" title="Pewter"></button>
+            <button class="v-sw" style="background:#222222" onclick="setMatColor('#222222',this)" title="Black"></button>
+          </div>
+          <div class="v-presets" style="margin-top:6px">
+            <button class="v-preset on" onclick="setFinish(0.80,0.0);this.parentNode.querySelectorAll('.v-preset').forEach(b=>b.classList.remove('on'));this.classList.add('on')">Matte</button>
+            <button class="v-preset" onclick="setFinish(0.45,0.0);this.parentNode.querySelectorAll('.v-preset').forEach(b=>b.classList.remove('on'));this.classList.add('on')">Satin</button>
+            <button class="v-preset" onclick="setFinish(0.30,0.9);this.parentNode.querySelectorAll('.v-preset').forEach(b=>b.classList.remove('on'));this.classList.add('on')">Metal</button>
+          </div>
+
+          <div class="v-sec-t">Background</div>
+          <div class="v-sws">
+            <button class="v-sw on" style="background:#0F172A" onclick="setBg('#0F172A',this)" title="Dark"></button>
+            <button class="v-sw" style="background:#3c3f4a" onclick="setBg('#3c3f4a',this)" title="Slate"></button>
+            <button class="v-sw" style="background:#7575b5" onclick="setBg('#7575b5',this)" title="Studio"></button>
+            <button class="v-sw" style="background:#eceeec" onclick="setBg('#eceeec',this)" title="Light"></button>
+            <button class="v-sw" style="background:#000000" onclick="setBg('#000000',this)" title="Black"></button>
+          </div>
         </div>
       </div>
     </div>
@@ -1378,6 +1445,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 let renderer, scene, camera, controls, model, lastGlb = null;
 let wireOn = false, autoRot = false;
+let keyLight, fillLight, ambLight, _vMats = [];
+// Viewer look state (persisted across loads).
+const _vLook = { az: 45, el: 55, key: 1.3, amb: 0.6, color: 0x9aa4b2,
+                 rough: 0.80, metal: 0.0, bg: 0x0F172A };
 
 function init(){
   const cv = document.getElementById('pv-canvas');
@@ -1388,12 +1459,13 @@ function init(){
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.1;
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0F172A);
+  scene.background = new THREE.Color(_vLook.bg);
   camera = new THREE.PerspectiveCamera(38, 1.6, .01, 100);
   camera.position.set(1.7, 1.3, 1.7);
-  scene.add(new THREE.AmbientLight(0xffffff, .6));
-  const k = new THREE.DirectionalLight(0xffffff, 1.3); k.position.set(3,6,4); scene.add(k);
-  const f = new THREE.DirectionalLight(0xffffff, .5); f.position.set(-3,2,-3); scene.add(f);
+  ambLight  = new THREE.AmbientLight(0xffffff, _vLook.amb); scene.add(ambLight);
+  keyLight  = new THREE.DirectionalLight(0xffffff, _vLook.key); scene.add(keyLight);
+  fillLight = new THREE.DirectionalLight(0xffffff, .45); fillLight.position.set(-3,2,-3); scene.add(fillLight);
+  applyLightPos();   // place the key light from az/el
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.dampingFactor = .08;
   controls.autoRotate = false; controls.autoRotateSpeed = 1.0;
@@ -1423,13 +1495,15 @@ function loadGlb(name){
     // from trimesh with NO vertex normals and no/odd materials, so three.js
     // renders them dark + speckled. Recompute smooth normals and apply a clean
     // matte double-sided material so the shape reads as a solid sculpt.
+    _vMats = [];
     model.traverse(o => {
       if(o.isMesh && o.geometry){
         try{ o.geometry.computeVertexNormals(); }catch(e){}
         o.material = new THREE.MeshStandardMaterial({
-          color:0x9aa4b2, roughness:0.80, metalness:0.0,
+          color:_vLook.color, roughness:_vLook.rough, metalness:_vLook.metal,
           side:THREE.DoubleSide, flatShading:false });
         o.material.wireframe = wireOn;
+        _vMats.push(o.material);
       }
     });
     const box = new THREE.Box3().setFromObject(model);
@@ -1481,7 +1555,59 @@ function doFit(){ if(!model || !camera) return;
   camera.position.copy(dir.multiplyScalar(dist).add(sph.center));
   controls.target.copy(sph.center); }
 
-window._v = { loadGlb, toggleSpin, toggleWire, doFit };
+// ── Viewer look controls (lighting / color / background) ──────────────────
+function applyLightPos(){
+  if(!keyLight) return;
+  const az = _vLook.az * Math.PI/180, el = _vLook.el * Math.PI/180;
+  const r = 8;
+  keyLight.position.set(
+    r*Math.cos(el)*Math.sin(az), r*Math.sin(el), r*Math.cos(el)*Math.cos(az));
+  keyLight.intensity = _vLook.key;
+  if(ambLight) ambLight.intensity = _vLook.amb;
+}
+function setLight(prop, val){ _vLook[prop] = parseFloat(val); applyLightPos(); }
+function _swActive(btn){
+  if(btn && btn.parentNode){ btn.parentNode.querySelectorAll('.v-sw').forEach(s=>s.classList.remove('on')); btn.classList.add('on'); }
+}
+function setMatColor(hex, btn){
+  _vLook.color = parseInt(hex.replace('#','0x'));
+  _vMats.forEach(m => m.color.setHex(_vLook.color));
+  _swActive(btn);
+}
+function setFinish(rough, metal){
+  _vLook.rough = rough; _vLook.metal = metal;
+  _vMats.forEach(m => { m.roughness = rough; m.metalness = metal; });
+}
+function setBg(hex, btn){
+  _vLook.bg = parseInt(hex.replace('#','0x'));
+  if(scene) scene.background = new THREE.Color(_vLook.bg);
+  _swActive(btn);
+}
+function lightPreset(name){
+  const P = {
+    studio:  {az:45, el:55, key:1.3, amb:0.6},
+    soft:    {az:30, el:60, key:0.9, amb:1.0},
+    dramatic:{az:75, el:25, key:2.2, amb:0.25},
+    top:     {az:0,  el:85, key:1.6, amb:0.5},
+    rim:     {az:160,el:35, key:2.0, amb:0.35},
+  }[name] || {};
+  Object.assign(_vLook, P);
+  applyLightPos();
+  // reflect sliders
+  ['az','el','key','amb'].forEach(k=>{ const el=document.getElementById('vc-'+k);
+    if(el) el.value = _vLook[k]; });
+  document.querySelectorAll('.v-preset').forEach(b =>
+    b.classList.toggle('on', b.dataset.preset===name));
+}
+function toggleVPanel(){
+  const p = document.getElementById('v-panel');
+  if(p) p.classList.toggle('open');
+}
+
+window._v = { loadGlb, toggleSpin, toggleWire, doFit, applyLightPos };
+window.setLight = setLight; window.setMatColor = setMatColor;
+window.setFinish = setFinish; window.setBg = setBg;
+window.lightPreset = lightPreset; window.toggleVPanel = toggleVPanel;
 </script>
 
 <!-- ── MAIN APP ───────────────────────────────────────────────────── -->
