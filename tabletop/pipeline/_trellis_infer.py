@@ -278,29 +278,25 @@ def main() -> int:
         mesh.remove_unreferenced_vertices()
     except Exception as e:  # noqa: BLE001
         print(f"[trellis] WARN trimesh dedup partial ({e})", flush=True)
-    # Step 2 (pymeshlab, targeted): repair the remaining non-manifold edges and
-    # CLOSE ONLY SMALL HOLES (the dark specks). maxholesize caps it so big
-    # openings are NEVER fanned (the thing that broke earlier meshes).
-    try:
-        import pymeshlab
-        ms = pymeshlab.MeshSet()
-        ms.add_mesh(pymeshlab.Mesh(vertex_matrix=mesh.vertices.astype("float64"),
-                                   face_matrix=mesh.faces.astype("int32")))
-        try: ms.meshing_repair_non_manifold_edges()
-        except Exception: pass  # noqa: BLE001
-        try: ms.meshing_repair_non_manifold_vertices()
-        except Exception: pass  # noqa: BLE001
-        try: ms.meshing_close_holes(maxholesize=40)
-        except Exception: pass  # noqa: BLE001 — skip if unsupported (never fan)
-        try: ms.meshing_remove_unreferenced_vertices()
-        except Exception: pass  # noqa: BLE001
-        cm = ms.current_mesh()
-        mesh = trimesh.Trimesh(vertices=cm.vertex_matrix(),
-                               faces=cm.face_matrix(), process=False)
-        print(f"[trellis] manifold repair: {len(mesh.faces)} faces, "
-              f"watertight={mesh.is_watertight}", flush=True)
-    except Exception as e:  # noqa: BLE001
-        print(f"[trellis] WARN pymeshlab repair skipped ({e})", flush=True)
+    # Step 2 (pymeshlab) — ONLY if not already watertight, and ONLY additively:
+    # close small holes (maxholesize cap = never fan). We do NOT run
+    # repair_non_manifold_edges because pymeshlab implements it by DELETING faces,
+    # which punches holes and breaks an already-clean watertight mesh.
+    if not mesh.is_watertight:
+        try:
+            import pymeshlab
+            ms = pymeshlab.MeshSet()
+            ms.add_mesh(pymeshlab.Mesh(vertex_matrix=mesh.vertices.astype("float64"),
+                                       face_matrix=mesh.faces.astype("int32")))
+            try: ms.meshing_close_holes(maxholesize=40)
+            except Exception: pass  # noqa: BLE001 — skip if unsupported
+            cm = ms.current_mesh()
+            mesh = trimesh.Trimesh(vertices=cm.vertex_matrix(),
+                                   faces=cm.face_matrix(), process=False)
+            print(f"[trellis] hole-close: {len(mesh.faces)} faces, "
+                  f"watertight={mesh.is_watertight}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[trellis] WARN hole-close skipped ({e})", flush=True)
     try:
         trimesh.repair.fix_winding(mesh)
         trimesh.repair.fix_normals(mesh)
