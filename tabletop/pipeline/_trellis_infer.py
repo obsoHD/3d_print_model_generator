@@ -309,6 +309,41 @@ def main() -> int:
     except Exception:  # noqa: BLE001
         pass
 
+    # Collapse dual-contouring SLIVERS (near-degenerate triangles from o_voxel's
+    # quad-split — these scatter as dark specks across clothes/face/hair and make
+    # the slicer choke, even though they're topologically valid). Merge very-close
+    # vertices to collapse them. Guard: if the merge would OPEN a watertight mesh
+    # (thin walls collapsing), revert — so solid meshes get cleaned and thin ones
+    # are left intact (use PRINT-SAFE for those).
+    try:
+        import pymeshlab
+        pre_wt = mesh.is_watertight
+        ms = pymeshlab.MeshSet()
+        ms.add_mesh(pymeshlab.Mesh(vertex_matrix=mesh.vertices.astype("float64"),
+                                   face_matrix=mesh.faces.astype("int32")))
+        merged = False
+        try:
+            ms.meshing_merge_close_vertices(
+                threshold=pymeshlab.PercentageValue(0.02)); merged = True
+        except Exception:  # noqa: BLE001 — older API / param name
+            try: ms.meshing_merge_close_vertices(); merged = True
+            except Exception: pass  # noqa: BLE001
+        try: ms.meshing_remove_null_faces()
+        except Exception: pass  # noqa: BLE001
+        if merged:
+            cm = ms.current_mesh()
+            cand = trimesh.Trimesh(vertices=cm.vertex_matrix(),
+                                   faces=cm.face_matrix(), process=False)
+            if cand.is_watertight or not pre_wt:
+                mesh = cand
+                print(f"[trellis] sliver cleanup: {len(mesh.faces)} faces, "
+                      f"watertight={mesh.is_watertight}", flush=True)
+            else:
+                print("[trellis] sliver cleanup reverted (would open the mesh; "
+                      "use TRELLIS_PRINTSAFE=1 for thin subjects)", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[trellis] WARN sliver cleanup skipped ({e})", flush=True)
+
     # Orientation: the o_voxel coord swap leaves the model glTF Y-up; our gauntlet
     # + slicer are Z-up. Rotate +90 deg about X so +Y (up) -> +Z (up) = upright.
     mesh.apply_transform(
