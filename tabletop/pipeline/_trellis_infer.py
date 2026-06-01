@@ -84,6 +84,17 @@ def _trellis_geometry_mesh(m, max_faces, remesh=True,
             resolution=resolution, band=remesh_band,
             project_back=remesh_project, verbose=verbose, bvh=bvh))
         mesh.simplify(int(max_faces), verbose=verbose)
+        # Upstream's remesh branch STOPS here, leaving non-manifold edges + holes
+        # (fine for texturing, NOT for printing). Add the same cumesh cleaning
+        # the non-remesh branch uses — all GPU, fast — so the mesh is manifold +
+        # watertight without the slow CPU pymeshfix. fill_holes at 1.0 closes the
+        # remaining boundaries (extent ~1 unit) so the slicer accepts it.
+        mesh.remove_duplicate_faces()
+        mesh.repair_non_manifold_edges()
+        mesh.remove_small_connected_components(1e-5)
+        mesh.fill_holes(max_hole_perimeter=1.0)
+        mesh.repair_non_manifold_edges()
+        mesh.unify_face_orientations()
     else:
         mesh.simplify(int(max_faces) * 3, verbose=verbose)
         mesh.remove_duplicate_faces(); mesh.repair_non_manifold_edges()
