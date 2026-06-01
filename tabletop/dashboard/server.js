@@ -568,6 +568,49 @@ function deleteOutput(opts) {
   return { ok: true, removed };
 }
 
+// Force-kill: stop the pipeline AND delete the run's data (concept image + its
+// views, the mesh/gauntlet GLBs + report sidecars, and the run log). Used to
+// abort a bad run and wipe its partial artifacts in one click. Scoped to the
+// given run_id (validated) so it can only touch that run's files.
+function forceKill(opts) {
+  killPipeline();
+  const removed = [];
+  // Always drop the active log.
+  try {
+    if (_activeLog && fs.existsSync(_activeLog)) {
+      fs.unlinkSync(_activeLog); removed.push(path.basename(_activeLog)); _activeLog = null;
+    }
+  } catch (e) {}
+  const runId = opts && opts.run_id ? String(opts.run_id) : '';
+  if (/^\d{8}_\d{6}_.+_[0-9a-f]{6}$/.test(runId)) {
+    // concepts: {runId}.png + {runId}_<view>.png
+    try {
+      for (const f of fs.readdirSync(CONCEPTS)) {
+        if (f === runId + '.png' || f.startsWith(runId + '_')) {
+          fs.unlinkSync(path.join(CONCEPTS, f)); removed.push(f);
+        }
+      }
+    } catch (e) {}
+    // meshes: {runId}.glb, {runId}.gauntlet.glb + .cleanup/.validate json sidecars
+    try {
+      for (const f of fs.readdirSync(MESHES)) {
+        if (f.startsWith(runId + '.') || f.startsWith(runId + '_')) {
+          fs.unlinkSync(path.join(MESHES, f)); removed.push(f);
+        }
+      }
+    } catch (e) {}
+    // logs that reference this run
+    try {
+      for (const f of fs.readdirSync(LOG_DIR)) {
+        if (f.includes(runId.split('_').slice(2).join('_'))) {
+          try { fs.unlinkSync(path.join(LOG_DIR, f)); removed.push(f); } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  }
+  return { ok: true, removed, count: removed.length };
+}
+
 function killPipeline() {
   if (process.platform === 'win32') {
     cp.exec(
@@ -640,6 +683,7 @@ const server = http.createServer(async (req, res) => {
       if (url === '/api/run')        result = launchRun(body);
       else if (url === '/api/concept') result = genConcept(body);
       else if (url === '/api/kill')  result = killPipeline();
+      else if (url === '/api/forcekill') result = forceKill(body);
       else if (url === '/api/delete') result = deleteOutput(body);
       else if (url === '/api/reveal') result = revealFile(body);
       else { res.writeHead(404); res.end('not found'); return; }

@@ -412,6 +412,11 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
   letter-spacing:.05em;flex-shrink:0;font-family:var(--mono)}
 .hbadge.done{background:var(--accent-soft);color:var(--accent)}
 .hbadge.wip{background:rgba(255,165,0,.15);color:var(--warn)}
+.hist-kill{flex-shrink:0;margin-left:6px;padding:4px 8px;font-size:9px;font-weight:800;
+  letter-spacing:.04em;border-radius:5px;cursor:pointer;font-family:var(--mono);
+  background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.4);
+  transition:all .15s}
+.hist-kill:hover{background:#ef4444;color:#fff;border-color:#ef4444}
 
 /* ── OUTPUT ROW (clickable) ────────────────────────────────────────── */
 .out-row{cursor:pointer;transition:border-color .15s,transform .12s}
@@ -1632,6 +1637,22 @@ async function killRun(){
   try{ await fetch('/api/kill', {method:'POST'}); toast('Pipeline stopped'); }
   catch{ toast('Server error', 'err'); }
 }
+// Force kill: stop the pipeline AND delete this run's data (concept/mesh/logs).
+async function forceKillRun(runId){
+  if(!confirm('FORCE KILL\n\nStop the pipeline AND delete this run’s data '
+    +'(concept image, mesh, logs)?\n\nThis cannot be undone.')) return;
+  try{
+    const r = await fetch('/api/forcekill', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({run_id: runId || _liveRunId || ''})}).then(r=>r.json());
+    if(r.ok){
+      toast('Force-killed + deleted '+(r.count||0)+' file(s)','ok');
+      _liveRunId=null; _outsHash=''; _historyHash=''; _sysHash='';
+      if(typeof clearPreviewForNewRun==='function') clearPreviewForNewRun();
+      refresh();
+    } else toast('Force kill failed: '+(r.error||'unknown'),'err');
+  }catch{ toast('Server error','err'); }
+}
 
 function fmtTime(s){ if(!s || s<=0) return '0s';
   if(s<60) return s+'s';
@@ -2280,6 +2301,8 @@ function updHist(history){
         <div class="hist-ts">${ts}</div>
       </div>
       <span class="hbadge wip">STEP ${active.step}/4</span>
+      <button class="hist-kill" title="Force kill + delete this run's data"
+        onclick='event.stopPropagation();forceKillRun(${JSON.stringify(active.run_id)})'>✕ kill</button>
     </div>`);
   }
   // Other recent runs (excluding the active one, if any)
