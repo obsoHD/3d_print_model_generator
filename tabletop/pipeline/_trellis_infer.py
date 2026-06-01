@@ -26,8 +26,10 @@ def main() -> int:
     args = ap.parse_args()
 
     sys.path.insert(0, args.lib)
-    # Avoid flash-attn (no clean Blackwell build) + safe spconv algo.
-    os.environ.setdefault("ATTN_BACKEND", "xformers")
+    # Pure-torch attention (scaled_dot_product_attention) — needs NEITHER xformers
+    # NOR flash-attn, both of which are an ABI/Blackwell-build minefield. TRELLIS.2
+    # supports ATTN_BACKEND=sdpa and lazy-loads backends, so this just works.
+    os.environ["ATTN_BACKEND"] = "sdpa"
     os.environ.setdefault("SPCONV_ALGO", "native")
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     import torch

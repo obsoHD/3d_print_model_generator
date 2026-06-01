@@ -89,14 +89,41 @@ RUN git clone --depth 1 https://github.com/VAST-AI-Research/TripoSG.git /app/tab
 #     weights auto-download at first run to /data. ---
 RUN git clone --depth 1 https://github.com/HKUST-SAIL/CraftsMan3D.git /app/tabletop/CraftsMan3D
 
-# --- TRELLIS.2 + Hi3DGen: clone only (code, harmless). Their CUDA stacks are
-#     installed in ISOLATED venvs by a separate opt-in script (deploy/install_
-#     heavy_engines.sh) so they can NEVER regress the shared env again. Selecting
-#     these engines before that script runs will error cleanly; the other engines
-#     are unaffected. (An earlier attempt installed the stack into the shared env
-#     and downgraded a core dep — never again.) ---
+# --- TRELLIS.2 + Hi3DGen: clone the code. Hi3DGen imports cleanly on the shared
+#     env already. TRELLIS.2 needs its bespoke CUDA exts (built in the next step).
+#     (An earlier attempt installed the xformers/spconv/kaolin STACK into the
+#     shared env and downgraded a core dep — that is gone. The ext builds below
+#     are the SAFE pattern: source compiles only, --no-deps, non-fatal.) ---
 RUN git clone --depth 1 https://github.com/microsoft/TRELLIS.2.git /app/tabletop/TRELLIS \
  && git clone --depth 1 https://github.com/Stable-X/Stable3DGen.git /app/tabletop/Stable3DGen
+
+# --- TRELLIS.2 custom CUDA extensions (cumesh / o-voxel / flexgemm + nvdiffrast/
+#     nvdiffrec). These are the ModuleNotFoundError('cumesh') blockers. Built from
+#     source against the EXISTING torch — the SAFE pattern proven by diso/torch-
+#     cluster: FORCE_CUDA + --no-build-isolation compile .so files; --no-deps means
+#     they can NOT change torch/numpy (the thing that broke everything before).
+#     EACH build is NON-FATAL: if one won't compile on sm_120, TRELLIS.2 simply
+#     stays "needs deps" on the health screen and the OTHER 6 engines are untouched.
+#     Attention uses the pure-torch 'sdpa' backend (set in the engine), so neither
+#     xformers nor flash-attn is needed. ---
+RUN --mount=type=cache,target=/root/.cache/pip set +e; \
+    export FORCE_CUDA=1 CUDA_HOME=/usr/local/cuda TORCH_CUDA_ARCH_LIST="12.0"; \
+    mkdir -p /tmp/ext; \
+    ( git clone --recursive https://github.com/JeffreyXiang/CuMesh.git /tmp/ext/CuMesh \
+        && python -m pip install /tmp/ext/CuMesh --no-build-isolation --no-deps ) \
+        || echo "WARN: cumesh build failed (TRELLIS.2 stays needs-deps)"; \
+    ( git clone --recursive https://github.com/JeffreyXiang/FlexGEMM.git /tmp/ext/FlexGEMM \
+        && python -m pip install /tmp/ext/FlexGEMM --no-build-isolation --no-deps ) \
+        || echo "WARN: flexgemm build failed"; \
+    ( python -m pip install /app/tabletop/TRELLIS/o-voxel --no-build-isolation --no-deps ) \
+        || echo "WARN: o-voxel build failed"; \
+    ( git clone -b v0.4.0 https://github.com/NVlabs/nvdiffrast.git /tmp/ext/nvdiffrast \
+        && python -m pip install /tmp/ext/nvdiffrast --no-build-isolation --no-deps ) \
+        || echo "WARN: nvdiffrast build failed"; \
+    ( git clone -b renderutils https://github.com/JeffreyXiang/nvdiffrec.git /tmp/ext/nvdiffrec \
+        && python -m pip install /tmp/ext/nvdiffrec --no-build-isolation --no-deps ) \
+        || echo "WARN: nvdiffrec build failed"; \
+    rm -rf /tmp/ext; true
 
 # pymeshlab's Qt plugins (used by hy3dshape postprocessors) link libOpenGL.so.0
 # et al. Install the GL runtime libs as a late layer so the heavy steps above
