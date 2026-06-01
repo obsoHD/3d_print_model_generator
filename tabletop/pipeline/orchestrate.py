@@ -601,13 +601,16 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
                     mini_vox = max(0.16, round(scale_mm / 180.0, 2))
                     gauntlet_args = ["--no-orient", "--force-voxel", str(mini_vox)]
                     print(f"  [2b/4] mesh gauntlet (mini-heal voxel {mini_vox}mm)...")
-                elif engine in ("hunyuan21", "trellis", "hi3dgen"):
-                    # Clean, watertight, DETAIL engines. TRELLIS.2 (O-Voxel) and
-                    # Hi3DGen are watertight by construction, so the voxel-remesh
-                    # solidify only smears detail, and Tweaker auto-orient tips
-                    # busts/figures onto their back (→ the giant flat oval base +
-                    # tilt). Keep the engine's upright orientation; just drop
-                    # floaters + repair + seat to bed. No orient, no solidify.
+                elif engine in ("trellis", "hi3dgen"):
+                    # o_voxel ALREADY remeshed + cleaned the mesh. pymeshfix repair
+                    # on 1M+ faces is slow AND re-fans residual boundaries; the
+                    # voxel-remesh solidify smears detail; Tweaker tips figures on
+                    # their back. So do the MINIMUM: drop floaters + scale + seat.
+                    # Any minor non-manifold left is auto-repaired by the slicer.
+                    gauntlet_args = ["--no-orient", "--no-solidify", "--no-repair"]
+                    print(f"  [2b/4] mesh gauntlet (TRELLIS/Hi3DGen: floaters + scale + seat, no repair)...")
+                elif engine == "hunyuan21":
+                    # SDF mesh — keep pymeshfix repair, but no orient/solidify.
                     gauntlet_args = ["--no-orient", "--no-solidify"]
                     print(f"  [2b/4] mesh gauntlet (clean detail engine; drop floaters + repair + seat only)...")
                 else:
