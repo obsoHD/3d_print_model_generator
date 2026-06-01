@@ -145,13 +145,13 @@ def check_models() -> dict:
     # TRELLIS.2 (Microsoft, 4B O-Voxel — largest open model)
     tr_dir = TABLETOP_ROOT / "TRELLIS"
     report["engines"]["trellis"] = {
-        "ready": tr_dir.exists() and (tr_dir / "trellis" / "__init__.py").exists(),
+        "ready": tr_dir.exists() and (tr_dir / "trellis2" / "__init__.py").exists(),
         "path": str(tr_dir),
     }
     # Hi3DGen (Stable3DGen — normal-bridging, best geometric fidelity)
     h3_dir = TABLETOP_ROOT / "Stable3DGen"
     report["engines"]["hi3dgen"] = {
-        "ready": h3_dir.exists() and (h3_dir / "trellis" / "__init__.py").exists(),
+        "ready": h3_dir.exists() and (h3_dir / "hi3dgen" / "__init__.py").exists(),
         "path": str(h3_dir),
     }
     # LoRAs

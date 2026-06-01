@@ -30,10 +30,8 @@ def main() -> int:
     os.environ.setdefault("SPCONV_ALGO", "native")
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     import torch
-    import numpy as np
-    import trimesh
     from PIL import Image
-    from trellis.pipelines import Hi3DGenPipeline
+    from hi3dgen.pipelines import Hi3DGenPipeline
 
     print(f"[hi3dgen] torch {torch.__version__} cuda={torch.cuda.is_available()}",
           flush=True)
@@ -43,7 +41,7 @@ def main() -> int:
 
     print(f"[hi3dgen] loading StableNormal estimator ({args.yoso}) ...", flush=True)
     normal_predictor = torch.hub.load(
-        "Stable-X/StableNormal", "StableNormal_turbo",
+        "hugoycj/StableNormal", "StableNormal_turbo",
         trust_repo=True, yoso_version=args.yoso)
 
     image = Image.open(args.image).convert("RGB")
@@ -52,12 +50,11 @@ def main() -> int:
                               match_input_resolution=True, data_type="object")
 
     print(f"[hi3dgen] normal -> geometry (seed={args.seed})...", flush=True)
-    outputs = pipe.run(normal, seed=args.seed, formats=["mesh"])
-    m = outputs["mesh"][0]
-
-    def _np(x):
-        return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
-    mesh = trimesh.Trimesh(vertices=_np(m.vertices), faces=_np(m.faces))
+    outputs = pipe.run(
+        normal, seed=args.seed, formats=["mesh"], preprocess_image=False,
+        sparse_structure_sampler_params={"steps": 12, "cfg_strength": 3},
+        slat_sampler_params={"steps": 12, "cfg_strength": 3})
+    mesh = outputs["mesh"][0].to_trimesh(transform_pose=True)
 
     out = Path(args.output); out.parent.mkdir(parents=True, exist_ok=True)
     mesh.export(str(out))

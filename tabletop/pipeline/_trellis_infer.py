@@ -34,26 +34,21 @@ def main() -> int:
     import numpy as np
     import trimesh
     from PIL import Image
-    from trellis.pipelines import TrellisImageTo3DPipeline
+    from trellis2.pipelines import Trellis2ImageTo3DPipeline
 
     print(f"[trellis] torch {torch.__version__} cuda={torch.cuda.is_available()}",
           flush=True)
     print(f"[trellis] loading pipeline {args.model} ...", flush=True)
-    pipe = TrellisImageTo3DPipeline.from_pretrained(args.model)
+    pipe = Trellis2ImageTo3DPipeline.from_pretrained(args.model)
     pipe.cuda()
 
     img = Image.open(args.image).convert("RGBA")
     print(f"[trellis] running ({args.image}, seed={args.seed})...", flush=True)
-    outputs = pipe.run(img, seed=args.seed, formats=["mesh"])
-    m = outputs["mesh"][0]
+    m = pipe.run(img)[0]   # O-Voxel mesh result
 
-    # MeshExtractResult -> trimesh. Vertices/faces live on .vertices/.faces
-    # (torch tensors); fall back to attribute names if the API differs.
     def _np(x):
         return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
-    verts = _np(getattr(m, "vertices"))
-    faces = _np(getattr(m, "faces"))
-    mesh = trimesh.Trimesh(vertices=verts, faces=faces)
+    mesh = trimesh.Trimesh(vertices=_np(m.vertices), faces=_np(m.faces))
 
     out = Path(args.output); out.parent.mkdir(parents=True, exist_ok=True)
     mesh.export(str(out))

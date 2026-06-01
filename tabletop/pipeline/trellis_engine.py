@@ -14,7 +14,7 @@ LIB_DIR       = TABLETOP_ROOT / "TRELLIS"
 
 
 def _ready() -> bool:
-    return (LIB_DIR / "trellis" / "__init__.py").exists()
+    return (LIB_DIR / "trellis2" / "__init__.py").exists()
 
 
 def generate(image_path: str, out_path: str,
