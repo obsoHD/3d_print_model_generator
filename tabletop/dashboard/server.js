@@ -167,38 +167,42 @@ function _deriveSubstage(procRunning, cmdLines, logTail) {
     /\[2\/4\] mesh|\[1\/3\] multi-view|\[(hunyuan2?1?mv?|trellis|hi3dgen|triposg|craftsman)\]|sampling (sparse structure|shape slat|texture slat)|estimating surface normals|shape (diffusion|pipeline)|volume decoding|loading (shape|geometry)? ?pipeline|loading pipeline|flashvdm|full gpu load|octree|o-?voxel|raw mesh|decimat/i.test(last);
   if (meshHit) {
     const p = pct ? ' · ' + pct : '';
-    let sub;
+    const pn = pct ? (parseInt(pct, 10) || 0) / 100 : 0;  // 0..1 within current bar
+    // meshFrac = REAL 0..1 progress through the mesh stage (drives the bar).
+    // For 3-stage cascades, sampling spans 0.10..0.80, remesh→0.88, save→0.97.
+    const samp3 = (i) => 0.10 + 0.70 * ((i + pn) / 3);    // i = 0,1,2 (sub-stage)
+    let sub, meshFrac = null;
     // ---- TRELLIS.2 (4B O-Voxel) ----
     if (hasTrellis || /\[trellis\]|trellis\.2|sampling (sparse structure|shape slat|texture slat)/i.test(last)) {
-      sub = 'TRELLIS.2 — starting';
-      if (/loading pipeline|downloading|\.safetensors|resolve\/main|dinov|encoder|rmbg|birefnet/i.test(last))
-        sub = 'TRELLIS.2 — loading / downloading 4B model + encoders (first run is slow)';
-      else if (/sampling sparse structure/i.test(last)) sub = 'TRELLIS.2 — sampling sparse structure (1/3)' + p;
-      else if (/sampling shape slat/i.test(last))       sub = 'TRELLIS.2 — sampling shape (2/3)' + p;
-      else if (/sampling texture slat/i.test(last))     sub = 'TRELLIS.2 — sampling texture (3/3)' + p;
-      else if (/raw mesh|decimat/i.test(last))          sub = 'TRELLIS.2 — building + decimating mesh';
-      else if (/cutlass|forced xformers/i.test(last))   sub = 'TRELLIS.2 — preparing attention (Blackwell-safe)';
-      else if (/saved/i.test(last))                     sub = 'TRELLIS.2 — saving mesh';
+      sub = 'TRELLIS.2 — starting'; meshFrac = 0.03;
+      if (/loading pipeline|downloading|\.safetensors|resolve\/main|dinov|encoder|rmbg|birefnet/i.test(last)) {
+        sub = 'TRELLIS.2 — loading / downloading 4B model + encoders (first run is slow)'; meshFrac = 0.06; }
+      else if (/sampling sparse structure/i.test(last)) { sub = 'TRELLIS.2 — sampling sparse structure (1/3)' + p; meshFrac = samp3(0); }
+      else if (/sampling shape slat/i.test(last))       { sub = 'TRELLIS.2 — sampling shape (2/3)' + p; meshFrac = samp3(1); }
+      else if (/sampling texture slat/i.test(last))     { sub = 'TRELLIS.2 — sampling texture (3/3)' + p; meshFrac = samp3(2); }
+      else if (/raw mesh|decimat|remesh|geometry remesh/i.test(last)) { sub = 'TRELLIS.2 — remesh + clean mesh (GPU)'; meshFrac = 0.90; }
+      else if (/cutlass|forced xformers/i.test(last))   { sub = 'TRELLIS.2 — preparing attention (Blackwell-safe)'; meshFrac = 0.07; }
+      else if (/saved/i.test(last))                     { sub = 'TRELLIS.2 — saving mesh'; meshFrac = 0.97; }
     }
     // ---- Hi3DGen (normal-bridging) ----
     else if (hasHi3d || /\[hi3dgen\]/i.test(last)) {
-      sub = 'Hi3DGen — starting';
-      if (/loading geometry pipeline|downloading|resolve\/main|dinov/i.test(last))
-        sub = 'Hi3DGen — loading / downloading models (first run is slow)';
-      else if (/stablenormal|estimating surface normals|normal predictor/i.test(last)) sub = 'Hi3DGen — estimating surface normals';
-      else if (/sampling/i.test(last))  sub = 'Hi3DGen — normal → geometry diffusion' + p;
-      else if (/saved/i.test(last))     sub = 'Hi3DGen — saving mesh';
+      sub = 'Hi3DGen — starting'; meshFrac = 0.03;
+      if (/loading geometry pipeline|downloading|resolve\/main|dinov/i.test(last)) {
+        sub = 'Hi3DGen — loading / downloading models (first run is slow)'; meshFrac = 0.06; }
+      else if (/stablenormal|estimating surface normals|normal predictor/i.test(last)) { sub = 'Hi3DGen — estimating surface normals'; meshFrac = 0.20; }
+      else if (/sampling/i.test(last))  { sub = 'Hi3DGen — normal → geometry diffusion' + p; meshFrac = 0.30 + 0.60 * pn; }
+      else if (/saved/i.test(last))     { sub = 'Hi3DGen — saving mesh'; meshFrac = 0.95; }
     }
     // ---- TripoSG (watertight SDF) ----
     else if (hasTripo || /\[triposg\]/i.test(last)) {
-      sub = 'TripoSG — diffusion → watertight mesh' + p;
-      if (/downloading|loading/i.test(last)) sub = 'TripoSG — loading model';
-      else if (/saved/i.test(last))          sub = 'TripoSG — saving mesh';
+      sub = 'TripoSG — diffusion → watertight mesh' + p; meshFrac = 0.15 + 0.75 * pn;
+      if (/downloading|loading/i.test(last)) { sub = 'TripoSG — loading model'; meshFrac = 0.06; }
+      else if (/saved/i.test(last))          { sub = 'TripoSG — saving mesh'; meshFrac = 0.95; }
     }
     // ---- CraftsMan3D ----
     else if (hasCraft || /\[craftsman\]/i.test(last)) {
-      sub = 'CraftsMan3D — coarse 3D + normal refiner' + p;
-      if (/downloading|loading/i.test(last)) sub = 'CraftsMan3D — loading model';
+      sub = 'CraftsMan3D — coarse 3D + normal refiner' + p; meshFrac = 0.15 + 0.75 * pn;
+      if (/downloading|loading/i.test(last)) { sub = 'CraftsMan3D — loading model'; meshFrac = 0.06; }
     }
     // ---- Hunyuan (single / multi-view) ----
     else {
@@ -212,7 +216,7 @@ function _deriveSubstage(procRunning, cmdLines, logTail) {
       else if (/volume decoding|octree/.test(last)) sub = 'volume decode → mesh (octree 768)';
       else if (/saved/.test(last))          sub = 'saving mesh';
     }
-    return { running: true, stage: 'mesh', substep: sub };
+    return { running: true, stage: 'mesh', substep: sub, mesh_frac: meshFrac };
   }
   // 2) bg removal
   if (/background removed|removing background|rembg|\[1b\/4\]/.test(last)) {
@@ -365,11 +369,29 @@ function calcTiming(current) {
   const prevTotal = STAGE_ORDER.slice(0, stageIdx).reduce((s, k) => s + STEP_EST[k], 0);
   const stepElapsed = Math.max(0, totalElapsed - prevTotal);
   const stepEst     = STEP_EST[stage] || 300;
-  const stepPct     = Math.min(99, Math.round(stepElapsed / stepEst * 100));
+  let   stepPct     = Math.min(99, Math.round(stepElapsed / stepEst * 100));
 
   const totalEst   = Object.values(STEP_EST).reduce((a, b) => a + b, 0);
-  const totalPct   = Math.min(99, Math.round(totalElapsed / totalEst * 100));
+  let   totalPct   = Math.min(99, Math.round(totalElapsed / totalEst * 100));
   const etaSec     = Math.max(0, totalEst - totalElapsed);
+
+  // REAL progress override: during the mesh stage TRELLIS/Hi3DGen/TripoSG report
+  // an actual fraction (parsed from the live tqdm bars). Use it to drive the bar
+  // instead of the time-estimate, so the % tracks what's really happening.
+  const mf = _stageCache && typeof _stageCache.mesh_frac === 'number'
+    ? _stageCache.mesh_frac : null;
+  if (stage === 'mesh' && mf !== null) {
+    stepPct = Math.max(0, Math.min(99, Math.round(mf * 100)));
+    // Map mesh-stage fraction onto the overall bar: stages before mesh occupy a
+    // small slice (uploaded concept is instant), mesh ~10..72%, finish+validate
+    // fill the rest (those are fast for these engines).
+    totalPct = Math.max(8, Math.min(74, Math.round(8 + 66 * mf)));
+  } else if (stage === 'finish') {
+    // Mesh handed off at ~74%; keep the bar monotonic through the fast finish.
+    totalPct = Math.max(totalPct, 76 + Math.min(13, Math.round(stepElapsed / STEP_EST.finish * 13)));
+  } else if (stage === 'validate') {
+    totalPct = Math.max(totalPct, 90 + Math.min(9, Math.round(stepElapsed / STEP_EST.validate * 9)));
+  }
 
   // Substep label — prefer the live log-derived one (set by _refreshStage)
   let substep = (_stageCache && _stageCache.substep) || '';
