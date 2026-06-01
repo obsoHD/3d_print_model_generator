@@ -18,6 +18,41 @@ for (const d of [CONCEPTS, MESHES, STL_DIR, LOG_DIR]) {
 }
 let _activeLog = null;   // path to current run's log file
 
+// ── NETWORK throughput (Linux /proc/net/dev sampling) ───────────────────────
+// Sums rx/tx bytes across real interfaces (skips loopback) and diffs against the
+// previous sample to get bytes/sec. Returns 0s on non-Linux or if unreadable.
+let _lastNet = null;
+function getNet() {
+  try {
+    const raw = fs.readFileSync('/proc/net/dev', 'utf8');
+    let rx = 0, tx = 0;
+    for (const line of raw.split('\n')) {
+      const m = line.match(/^\s*([^:]+):\s*(.*)$/);
+      if (!m) continue;
+      const iface = m[1].trim();
+      if (iface === 'lo' || iface.startsWith('docker') || iface.startsWith('br-')
+          || iface.startsWith('veth')) continue;
+      const cols = m[2].trim().split(/\s+/).map(Number);
+      // /proc/net/dev cols: rx_bytes(0) ... tx_bytes(8)
+      if (cols.length >= 9) { rx += cols[0] || 0; tx += cols[8] || 0; }
+    }
+    const now = Date.now();
+    let rxBps = 0, txBps = 0;
+    if (_lastNet) {
+      const dt = (now - _lastNet.t) / 1000;
+      if (dt > 0) {
+        rxBps = Math.max(0, (rx - _lastNet.rx) / dt);
+        txBps = Math.max(0, (tx - _lastNet.tx) / dt);
+      }
+    }
+    _lastNet = { rx, tx, t: now };
+    return { net_rx_bps: Math.round(rxBps), net_tx_bps: Math.round(txBps),
+             net_rx_total: rx, net_tx_total: tx };
+  } catch {
+    return { net_rx_bps: 0, net_tx_bps: 0, net_rx_total: 0, net_tx_total: 0 };
+  }
+}
+
 // ── CPU + RAM ────────────────────────────────────────────────────────────────
 const os = require('os');
 let _lastCpu = null;
@@ -47,6 +82,7 @@ function getSystem() {
     ram_total_mb: Math.round(totalMem / 1048576),
     loadavg:    os.loadavg(),
     uptime_s:   Math.round(os.uptime()),
+    ...getNet(),
   };
 }
 

@@ -592,6 +592,7 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
     <div class="chip" id="chip-gpu"><span class="chip-k">GPU</span><span class="chip-v" id="g-util">—</span></div>
     <div class="chip" id="chip-vram"><span class="chip-k">VRAM</span><span class="chip-v" id="g-vram">—</span></div>
     <div class="chip" id="chip-temp"><span class="chip-k">Temp</span><span class="chip-v" id="g-temp">—</span></div>
+    <div class="chip" id="chip-net"><span class="chip-k">Net</span><span class="chip-v" id="h-net">—</span></div>
     <button class="chip chip-btn" id="chip-health" onclick="openStatus()"
       title="Engine health — test every model before you run">
       <span class="health-dot" id="health-dot"></span>
@@ -659,6 +660,12 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
       <div class="bar-row"><div class="bar-meta"><b>Load 1m</b><span id="load-txt">—</span></div>
         <div class="bar-track"><div class="bar-fill" id="load-bar"
           style="width:0%;background:linear-gradient(90deg,#22C55E,#FFA500,#DC2626)"></div></div></div>
+      <div class="bar-row"><div class="bar-meta"><b>Net ↓</b><span id="net-rx-txt">—</span></div>
+        <div class="bar-track"><div class="bar-fill" id="net-rx-bar"
+          style="width:0%;background:linear-gradient(90deg,#22D3EE,#3B82F6)"></div></div></div>
+      <div class="bar-row"><div class="bar-meta"><b>Net ↑</b><span id="net-tx-txt">—</span></div>
+        <div class="bar-track"><div class="bar-fill" id="net-tx-bar"
+          style="width:0%;background:linear-gradient(90deg,#A78BFA,#8B5CF6)"></div></div></div>
     </div>
     <div class="stats-grid">
       <div class="stat"><div class="stat-v" id="cpu-cores">—</div><div class="stat-k">Cores</div></div>
@@ -1613,7 +1620,7 @@ function fmtGB(mb){ return (mb/1024).toFixed(1)+' GB'; }
 let _sysHash = '';
 function updSys(s){
   if(!s) return;
-  const hash = `${s.cpu_util}|${s.ram_used_mb}|${s.ram_total_mb}|${s.loadavg?s.loadavg[0].toFixed(2):0}|${s.uptime_s}|${s.cpu_cores}`;
+  const hash = `${s.cpu_util}|${s.ram_used_mb}|${s.ram_total_mb}|${s.loadavg?s.loadavg[0].toFixed(2):0}|${s.uptime_s}|${s.cpu_cores}|${s.net_rx_bps}|${s.net_tx_bps}`;
   if(hash === _sysHash) return;
   _sysHash = hash;
   const circ = 2 * Math.PI * 60;
@@ -1644,6 +1651,22 @@ function updSys(s){
   const uph = Math.floor(up/3600), upm = Math.floor((up%3600)/60);
   document.getElementById('cpu-uptime').textContent = uph+'h '+upm+'m';
   document.getElementById('cpu-model').textContent = s.cpu_model || '—';
+  // Network throughput (down / up). Bars auto-scale to a decaying rolling peak
+  // (floor 1 MB/s) so steady downloads fill the bar without a fixed ceiling.
+  const rx = s.net_rx_bps||0, tx = s.net_tx_bps||0;
+  window._netPeak = Math.max((window._netPeak||1048576)*0.9, rx, tx, 1048576);
+  const pk = window._netPeak;
+  const fmtRate = (b)=> b>=1048576 ? (b/1048576).toFixed(1)+' MB/s'
+                      : b>=1024    ? (b/1024).toFixed(0)+' KB/s'
+                      : (b||0)+' B/s';
+  const setTxt = (id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+  const setBar = (id,b)=>{ const el=document.getElementById(id); if(el) el.style.width=Math.min(100, b/pk*100).toFixed(0)+'%'; };
+  setTxt('net-rx-txt', fmtRate(rx)); setBar('net-rx-bar', rx);
+  setTxt('net-tx-txt', fmtRate(tx)); setBar('net-tx-bar', tx);
+  // header chip — show the download rate (the relevant one during model pulls)
+  setTxt('h-net', '↓'+fmtRate(rx));
+  const chipNet = document.getElementById('chip-net');
+  if(chipNet) chipNet.classList.toggle('live', rx>262144 || tx>262144); // glow when active (>256 KB/s)
 }
 
 // ── GPU ────────────────────────────────────────────────────────────
