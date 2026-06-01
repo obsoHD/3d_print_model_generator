@@ -120,10 +120,55 @@ def _trellis_geometry_mesh(m, max_faces, remesh=True,
     return trimesh.Trimesh(vertices=conv, faces=of, process=False)
 
 
+def _run_multi(pipe, images, seed, steps, max_tokens):
+    """TRELLIS.2 MULTI-VIEW run. Mirrors the upstream run() body but conditions
+    on a LIST of images (front/side/back) instead of one — run() already calls
+    get_cond([image], ...) with a list, so multi-view is just passing several.
+    The fused conditioning gives the samplers real data for the occluded sides,
+    so the back/folds are reconstructed instead of left as flat-filled gaps."""
+    import torch
+    pt = pipe.default_pipeline_type
+    imgs = [pipe.preprocess_image(im) for im in images]
+    torch.manual_seed(seed)
+    cond_512 = pipe.get_cond(imgs, 512)
+    cond_1024 = pipe.get_cond(imgs, 1024) if pt != '512' else None
+    ss_res = {'512': 32, '1024': 64, '1024_cascade': 32, '1536_cascade': 32}[pt]
+    sp = {"steps": int(steps)}
+    coords = pipe.sample_sparse_structure(cond_512, ss_res, 1, sp)
+    if pt == '512':
+        shape_slat = pipe.sample_shape_slat(
+            cond_512, pipe.models['shape_slat_flow_model_512'], coords, sp)
+        tex_slat = pipe.sample_tex_slat(
+            cond_512, pipe.models['tex_slat_flow_model_512'], shape_slat, sp)
+        res = 512
+    elif pt == '1024':
+        shape_slat = pipe.sample_shape_slat(
+            cond_1024, pipe.models['shape_slat_flow_model_1024'], coords, sp)
+        tex_slat = pipe.sample_tex_slat(
+            cond_1024, pipe.models['tex_slat_flow_model_1024'], shape_slat, sp)
+        res = 1024
+    else:  # 1024_cascade / 1536_cascade
+        hi = 1536 if pt == '1536_cascade' else 1024
+        shape_slat, res = pipe.sample_shape_slat_cascade(
+            cond_512, cond_1024,
+            pipe.models['shape_slat_flow_model_512'],
+            pipe.models['shape_slat_flow_model_1024'],
+            512, hi, coords, sp, int(max_tokens))
+        tex_slat = pipe.sample_tex_slat(
+            cond_1024, pipe.models['tex_slat_flow_model_1024'], shape_slat, sp)
+    torch.cuda.empty_cache()
+    return pipe.decode_latent(shape_slat, tex_slat, res)[0]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--image",  required=True)
     ap.add_argument("--output", required=True, help="output GLB path")
+    # Multi-view: pass 2-3 consistent views (front/left/back). When --mv-front is
+    # given we condition on all of them so occluded sides are reconstructed.
+    ap.add_argument("--mv-front", default=None)
+    ap.add_argument("--mv-left",  default=None)
+    ap.add_argument("--mv-back",  default=None)
     ap.add_argument("--lib",    required=True, help="TRELLIS.2 repo dir")
     ap.add_argument("--model",  default="microsoft/TRELLIS.2-4B")
     ap.add_argument("--seed",   type=int, default=42)
@@ -163,31 +208,34 @@ def main() -> int:
     pipe = Trellis2ImageTo3DPipeline.from_pretrained(args.model)
     pipe.cuda()
 
-    img = Image.open(args.image).convert("RGBA")
     _force_xformers_cutlass()   # Blackwell-safe sparse attention
-    print(f"[trellis] running (seed={args.seed}, tokens={args.max_tokens}, "
-          f"steps={args.steps})...", flush=True)
-    # preprocess_image=TRUE is REQUIRED for correct proportions: TRELLIS.2's
-    # preprocess doesn't just remove background — it CENTERS the subject, pads to
-    # a square, and rescales to the canonical framing the model was trained on.
-    # With it OFF, the subject's framing/aspect feeds in raw and TRELLIS
-    # reconstructs squashed/dwarfish proportions. (It re-runs its RMBG, which is
-    # gated but accepted; harmless that we also removed bg upstream.)
-    try:
-        m = pipe.run(
-            img,
-            seed=args.seed,
-            preprocess_image=True,
-            max_num_tokens=int(args.max_tokens),
-            sparse_structure_sampler_params={"steps": int(args.steps)},
-            shape_slat_sampler_params={"steps": int(args.steps)},
-            tex_slat_sampler_params={"steps": int(args.steps)},
-        )[0]
-    except TypeError as e:
-        # Param-name drift across TRELLIS.2 versions — fall back to a plain run
-        # so we still get a mesh (OOM is NOT caught here; lower TRELLIS_TOKENS).
-        print(f"[trellis] WARN quality params rejected ({e}); plain run", flush=True)
-        m = pipe.run(img, seed=args.seed, preprocess_image=True)[0]
+
+    # ---- MULTI-VIEW: condition on front/left/back so occluded sides fill in ----
+    mv_paths = [p for p in (args.mv_front, args.mv_left, args.mv_back) if p]
+    if mv_paths:
+        views = [Image.open(p).convert("RGBA") for p in mv_paths]
+        print(f"[trellis] MULTI-VIEW run ({len(views)} views, seed={args.seed}, "
+              f"tokens={args.max_tokens}, steps={args.steps})...", flush=True)
+        m = _run_multi(pipe, views, args.seed, args.steps, args.max_tokens)
+    else:
+        img = Image.open(args.image).convert("RGBA")
+        print(f"[trellis] running (seed={args.seed}, tokens={args.max_tokens}, "
+              f"steps={args.steps})...", flush=True)
+        # preprocess_image=TRUE: TRELLIS.2's preprocess centers/squares/rescales the
+        # subject to its trained framing (off -> dwarfish proportions).
+        try:
+            m = pipe.run(
+                img,
+                seed=args.seed,
+                preprocess_image=True,
+                max_num_tokens=int(args.max_tokens),
+                sparse_structure_sampler_params={"steps": int(args.steps)},
+                shape_slat_sampler_params={"steps": int(args.steps)},
+                tex_slat_sampler_params={"steps": int(args.steps)},
+            )[0]
+        except TypeError as e:
+            print(f"[trellis] WARN quality params rejected ({e}); plain run", flush=True)
+            m = pipe.run(img, seed=args.seed, preprocess_image=True)[0]
 
     def _np(x):
         return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)

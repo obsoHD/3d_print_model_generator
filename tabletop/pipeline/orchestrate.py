@@ -90,8 +90,8 @@ def _stream(cmd, label, timeout=1500, cwd=None, env=None):
 #   hunyuan21  -> Hunyuan3D 2.1 (best neural — minis / organic)
 #   triposg/pixal3d/hunyuan/sparc3d -> other neural engines
 ENGINES = ("sparc3d", "hunyuan", "hunyuan21", "hunyuan2mv", "pixal3d",
-           "triposg", "craftsman", "trellis", "hi3dgen", "parametric",
-           "auto", "both")
+           "triposg", "craftsman", "trellis", "trellis_mv", "hi3dgen",
+           "parametric", "auto", "both")
 
 # Structural keywords that route engine=auto -> parametric CAD
 PARAMETRIC_KEYWORDS = ("tower", "wall", "crate", "box", "tile", "floor",
@@ -280,6 +280,59 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             print(f"  [3/3] validation skipped: {e}")
         result = {"run_id": run_id, "engine": "hunyuan2mv", "kind": kind,
                   "mesh_glb": str(mesh_glb), "stl": str(stl_path),
+                  "validated": validated}
+        print(f"=== done: {run_id} ===")
+        return result
+
+    if engine == "trellis_mv":
+        import json as _json
+        run_id = _new_run_id(prompt or "trellis_mv")
+        print(f"=== tabletop pipeline run: {run_id} (TRELLIS.2 multi-view) ===")
+        mesh_glb = OUT_MESHES / f"{run_id}.glb"
+        import trellis_mv_engine
+        print("  [1/4] multi-view mesh (TRELLIS.2 4B, front/left/back)...")
+        trellis_mv_engine.generate(
+            out_path=str(mesh_glb),
+            front=mv_front, left=mv_left, back=mv_back,
+            gif=mv_gif, reverse=mv_reverse, seed=seed or 42)
+        # Drop the front view as {run_id}.png so the dashboard discovers this run.
+        try:
+            import shutil as _sh
+            _front = mv_front if (mv_front and Path(mv_front).exists()) else None
+            if _front is None:
+                _vf = OUT_MESHES / f"{run_id}_views" / "front.png"
+                _front = str(_vf) if _vf.exists() else None
+            if _front:
+                _sh.copy(_front, OUT_CONCEPTS / f"{run_id}.png")
+        except Exception as _e:
+            print(f"  [mv] thumbnail copy skipped: {_e}", flush=True)
+        # Same finish as single-view TRELLIS: clean-detail gauntlet + direct STL.
+        repaired_glb = OUT_MESHES / f"{run_id}.gauntlet.glb"
+        rc, _ = _stream(
+            [PY, str(HERE / "mesh_gauntlet.py"), "--input", str(mesh_glb),
+             "--output", str(repaired_glb), "--scale-mm", str(scale_mm),
+             "--no-orient", "--no-solidify", "--no-repair"],
+            label="[2b/4] mesh gauntlet (TRELLIS mv)", timeout=1500)
+        src = repaired_glb if (rc == 0 and repaired_glb.exists()) else mesh_glb
+        stl_path = Path(out_stl) if out_stl else (OUT_STL / f"{run_id}.stl")
+        import trimesh as _tm
+        print("  [3/4] direct STL export (clean watertight mesh)...", flush=True)
+        _tm.load(str(src), force="mesh").export(str(stl_path))
+        print(f"        -> {stl_path.name}")
+        validated = None
+        try:
+            _stream([PY, str(HERE / "slicer_validate.py"), "--input", str(stl_path),
+                     "--printer", printer],
+                    label="[4b/4] slicer validation", timeout=400)
+            vfile = stl_path.with_suffix(".validate.json")
+            if vfile.exists():
+                validated = bool(_json.loads(
+                    vfile.read_text(encoding="utf-8")).get("PASS"))
+            print(f"  [4/4] slicer validation: {'PASS' if validated else 'FAIL'}")
+        except Exception as e:
+            print(f"  [4/4] validation skipped: {e}")
+        result = {"run_id": run_id, "engine": "trellis_mv", "kind": kind,
+                  "mesh_glb": str(repaired_glb), "stl": str(stl_path),
                   "validated": validated}
         print(f"=== done: {run_id} ===")
         return result
@@ -762,7 +815,7 @@ def main(argv=None) -> int:
     if args.check_models:
         print(json.dumps(check_models(), indent=2))
         return 0
-    if args.engine != "hunyuan2mv" and not args.prompt and not args.input_image:
+    if args.engine not in ("hunyuan2mv", "trellis_mv") and not args.prompt and not args.input_image:
         ap.error("either --prompt or --input-image is required")
     if not args.prompt:
         args.prompt = (f"user image: {Path(args.input_image).stem}"

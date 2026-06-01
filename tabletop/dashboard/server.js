@@ -510,12 +510,12 @@ function launchRun(opts) {
   if (_stageCache.running) return { ok: false, error: 'pipeline already running — kill it first' };
   const pipeDir = path.join(TABLETOP, 'pipeline');
 
-  // ---- MULTI-VIEW launch (engine=hunyuan2mv): front/left/back or a GIF ----
-  if (engine === 'hunyuan2mv') {
+  // ---- MULTI-VIEW launch (hunyuan2mv OR trellis_mv): front/left/back or GIF ----
+  if (engine === 'hunyuan2mv' || engine === 'trellis_mv') {
     const slugmv = (prompt || 'multiview').replace(/[^a-z0-9]/gi, '_').slice(0,28).toLowerCase();
     const outStlMv = path.join(STL_DIR, `${slugmv || 'multiview'}.stl`);
     const args = [path.join(pipeDir, 'orchestrate.py'),
-      '--engine', 'hunyuan2mv', '--kind', kind, '--printer', printer,
+      '--engine', engine, '--kind', kind, '--printer', printer,
       '--out', outStlMv, '--prompt', prompt || 'multiview'];
     if (seed) args.push('--seed', String(seed));
     if (mv_gif_data) {

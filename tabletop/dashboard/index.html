@@ -958,6 +958,10 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
 .wz-step.on{background:var(--accent,#37e6a4)}
 .wz-screen{display:none}.wz-screen.on{display:block}
 .wz-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.wz-more-btn{margin-top:14px;width:100%;padding:9px;font-size:12px;font-weight:600;
+  border-radius:10px;background:var(--bg2);border:1px dashed var(--line);
+  color:var(--dim2);cursor:pointer;transition:all .15s}
+.wz-more-btn:hover{border-color:var(--accent);color:var(--text)}
 .wz-card{cursor:pointer;border:1.5px solid var(--line,#243042);border-radius:14px;
   padding:22px;background:var(--bg2,#161d29);transition:border-color .15s,transform .1s}
 .wz-card:hover{border-color:var(--accent,#37e6a4);transform:translateY(-2px)}
@@ -1008,41 +1012,46 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
     <!-- SCREEN 1: engine -->
     <div class="wz-screen on" data-screen="1">
       <div class="wz-cards">
+        <div class="wz-card" data-engine="trellis" onclick="wzPickEngine('trellis',this)">
+          <h3>TRELLIS.2 · single image</h3>
+          <p>One image → 3D. The largest open model (4B, O-Voxel). Best detail/quality.
+             Front is faithful; the back is inferred (single view).</p>
+          <span class="tag">trellis.2 · 4B · single-view</span>
+        </div>
+        <div class="wz-card" data-engine="trellis_mv" onclick="wzPickEngine('trellis_mv',this)">
+          <h3>TRELLIS.2 · multi-view</h3>
+          <p>Front + Left + Back (or a turntable GIF / MP4) → 3D. Same 4B model, but
+             the occluded sides are <b>real data</b> — no flat-filled gaps on the back.
+             Best for full figures.</p>
+          <span class="tag">trellis.2 · 4B · 3 views</span>
+        </div>
+      </div>
+      <button class="wz-more-btn" id="wz-more-btn" onclick="wzToggleMore()">▸ More engines (legacy)</button>
+      <div class="wz-cards wz-more" id="wz-more" style="display:none;margin-top:12px">
         <div class="wz-card" data-engine="hunyuan21" onclick="wzPickEngine('hunyuan21',this)">
           <h3>Single-view Hunyuan</h3>
-          <p>One image → 3D. Generate from a prompt or upload one image (the clean
-             grey render is ideal). Fast. Front is faithful, the back is inferred.</p>
+          <p>One image → 3D. Fast. Front is faithful, the back is inferred.</p>
           <span class="tag">hunyuan21 · octree 768</span>
         </div>
         <div class="wz-card" data-engine="hunyuan2mv" onclick="wzPickEngine('hunyuan2mv',this)">
           <h3>Multi-view Hunyuan</h3>
-          <p>Front + Left + Back (or a turntable GIF / MP4) → 3D. The occluded sides
-             are real data — accurate in the round. Best for tabletop minis.</p>
+          <p>Front + Left + Back (or a turntable GIF / MP4) → 3D. Accurate in the round.</p>
           <span class="tag">hunyuan2mv · 3 views</span>
         </div>
         <div class="wz-card" data-engine="triposg" onclick="wzPickEngine('triposg',this)">
           <h3>TripoSG · max detail</h3>
-          <p>One image → 3D. SDF model with the sharpest watertight geometry —
-             best surface detail for minis. Single image (no multi-view).</p>
+          <p>One image → 3D. SDF model, sharp watertight geometry. Single image.</p>
           <span class="tag">triposg · SDF · sharp</span>
         </div>
         <div class="wz-card" data-engine="craftsman" onclick="wzPickEngine('craftsman',this)">
           <h3>CraftsMan3D · refined</h3>
-          <p>One image → coarse 3D → <b>normal-based geometry refiner</b>. Carves
-             in fine surface detail (faces, folds, cracks) the others smooth over.</p>
+          <p>One image → coarse 3D → normal-based geometry refiner.</p>
           <span class="tag">craftsman · coarse + refine</span>
         </div>
         <div class="wz-card" data-engine="hi3dgen" onclick="wzPickEngine('hi3dgen',this)">
           <h3>Hi3DGen · normal-bridging</h3>
-          <p>One image → high-detail <b>normal map</b> → normal-guided geometry.
-             Best geometric fidelity in studies — the detail specialist.</p>
+          <p>One image → high-detail normal map → normal-guided geometry.</p>
           <span class="tag">hi3dgen · normals</span>
-        </div>
-        <div class="wz-card" data-engine="trellis" onclick="wzPickEngine('trellis',this)">
-          <h3>TRELLIS.2 · 4B</h3>
-          <p>One image → 3D. The largest open model (4B, O-Voxel, 1536³). Highest
-             capacity / robustness; heaviest to run.</p>
-          <span class="tag">trellis.2 · 4B</span>
         </div>
       </div>
       <div class="wz-foot">
@@ -1161,7 +1170,13 @@ function wzReset(){
 }
 // Single-image engines (vs the multi-view one). triposg + hunyuan21 both take
 // one image; only hunyuan2mv uses the 3-view / GIF / MP4 panel.
-function wzIsSingle(){ return WZ.engine !== 'hunyuan2mv'; }
+function wzIsSingle(){ return WZ.engine !== 'hunyuan2mv' && WZ.engine !== 'trellis_mv'; }
+function wzToggleMore(){
+  const m = document.getElementById('wz-more'); const b = document.getElementById('wz-more-btn');
+  const open = m.style.display === 'none';
+  m.style.display = open ? 'grid' : 'none';
+  if(b) b.textContent = (open ? '▾' : '▸') + ' More engines (legacy)';
+}
 function wzGoto(s){
   WZ.screen=s;
   document.querySelectorAll('.wz-screen').forEach(el=>el.classList.toggle('on', +el.dataset.screen===s));
@@ -1249,7 +1264,7 @@ function wzContinueConcept(){ if(!WZ.conceptPath){ toast('Generate an image firs
 const WZ_ENGINE_LABEL = {hunyuan21:'Single-view Hunyuan',
   hunyuan2mv:'Multi-view Hunyuan', triposg:'TripoSG · max detail',
   craftsman:'CraftsMan3D · refined', hi3dgen:'Hi3DGen · normal-bridging',
-  trellis:'TRELLIS.2 · 4B'};
+  trellis:'TRELLIS.2 · single image', trellis_mv:'TRELLIS.2 · multi-view'};
 function wzBuildSummary(){
   const single = wzIsSingle();
   const kind = single ? document.getElementById('wz-kind').value
@@ -1296,7 +1311,7 @@ async function wzStart(){
   } else {
     const kind=document.getElementById('wz-kind2').value;
     const printer=document.getElementById('wz-printer2').value;
-    body={engine:'hunyuan2mv',kind,printer,
+    body={engine:(WZ.engine||'hunyuan2mv'),kind,printer,
       prompt:(userName || 'multiview subject'),
       mv_reverse:document.getElementById('wz-reverse').checked};
     if(WZ.mvmode==='gif') body.mv_gif_data=WZ.mv.gif;
