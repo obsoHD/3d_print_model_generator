@@ -15,6 +15,35 @@ import sys
 from pathlib import Path
 
 
+def _force_xformers_cutlass() -> None:
+    """xformers' default dispatch picks the flash-attention *Hopper* kernel
+    (sm_90 only) for sparse memory_efficient_attention, which throws
+    'CUDA error: invalid argument' on Blackwell (sm_120). Force the CUTLASS op,
+    which has broad arch coverage. Wrap so that if CUTLASS rejects a specific
+    mask/dtype we fall back to auto-dispatch rather than hard-fail."""
+    try:
+        import xformers.ops as xops  # noqa: WPS433
+    except Exception:  # noqa: BLE001
+        return
+    cutlass = getattr(xops, "MemoryEfficientAttentionCutlassOp", None)
+    if cutlass is None or getattr(xops.memory_efficient_attention, "_cutlass_forced", False):
+        return
+    orig = xops.memory_efficient_attention
+
+    def patched(*a, **k):
+        if k.get("op") is None:
+            k["op"] = cutlass
+            try:
+                return orig(*a, **k)
+            except Exception:  # noqa: BLE001 — CUTLASS rejected inputs; auto-dispatch
+                k.pop("op", None)
+        return orig(*a, **k)
+
+    patched._cutlass_forced = True  # noqa: SLF001
+    xops.memory_efficient_attention = patched
+    print("[hi3dgen] forced xformers CUTLASS attention (Blackwell-safe)", flush=True)
+
+
 def _alias_legacy_controlnet() -> None:
     """Make `diffusers.models.controlnet` resolve on diffusers>=0.37 (where it was
     moved to `diffusers.models.controlnets.controlnet`). Idempotent + non-fatal."""
@@ -94,6 +123,8 @@ def main() -> int:
     normal = normal_predictor(image, resolution=768,
                               match_input_resolution=True, data_type="object")
 
+    # Blackwell-safe sparse attention (avoid the sm_90-only flash Hopper kernel).
+    _force_xformers_cutlass()
     print(f"[hi3dgen] normal -> geometry (seed={args.seed})...", flush=True)
     outputs = pipe.run(
         normal, seed=args.seed, formats=["mesh"], preprocess_image=False,
