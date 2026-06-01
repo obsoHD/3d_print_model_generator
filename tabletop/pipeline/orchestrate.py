@@ -32,6 +32,19 @@ TABLETOP_ROOT = HERE.parent
 # (override with GEN3D_PY if you split envs). Windows multi-venv layout is retired.
 PY = os.environ.get("GEN3D_PY") or sys.executable
 
+# A placeholder / malformed HF_TOKEN in the container env (e.g. the unfilled
+# "hf_PASTE_YOUR_TOKEN_HERE") 401s EVERY gated download — and an env HF_TOKEN
+# takes PRECEDENCE over the real token cached in HF_HOME/token. Strip a bogus one
+# at startup so huggingface_hub falls back to the cached real token. All engine
+# subprocesses inherit this cleaned env (orchestrate is their parent).
+_hft = os.environ.get("HF_TOKEN", "")
+if _hft and ("PASTE" in _hft.upper() or "YOUR_TOKEN" in _hft.upper()
+             or not _hft.startswith("hf_") or len(_hft) < 30):
+    os.environ.pop("HF_TOKEN", None)
+    print(f"[orchestrate] ignoring placeholder/invalid HF_TOKEN "
+          f"(len={len(_hft)}); using cached token from HF_HOME if present.",
+          flush=True)
+
 # Output dirs
 OUT_CONCEPTS = TABLETOP_ROOT / "outputs" / "concepts"
 OUT_MESHES   = TABLETOP_ROOT / "outputs" / "meshes"
