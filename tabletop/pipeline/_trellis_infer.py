@@ -128,16 +128,16 @@ def main() -> int:
     ap.add_argument("--model",  default="microsoft/TRELLIS.2-4B")
     ap.add_argument("--seed",   type=int, default=42)
     ap.add_argument("--max-faces", type=int,
-                    default=int(os.environ.get("TRELLIS_MAX_FACES", 1_500_000)),
+                    default=int(os.environ.get("TRELLIS_MAX_FACES", 2_000_000)),
                     help="decimate above this (raw is ~4M; finish is fast now, "
-                         "so we keep more faces = more surface detail)")
+                         "so we keep more faces = less faceting on hair/beard)")
     # QUALITY knobs — these use your VRAM headroom (the 4B model itself only
     # needs ~4GB; the rest of your 32GB buys detail, not speed):
     #   max_num_tokens — TRELLIS.2's primary quality dial (default 49152 ≈ 4GB).
     #     Doubling to ~98k ≈ 8-12GB gives a denser/finer O-Voxel structure.
     #   steps — diffusion sampling steps per stage (was 12; 25 = cleaner shape).
     ap.add_argument("--max-tokens", type=int,
-                    default=int(os.environ.get("TRELLIS_TOKENS", 131_072)))
+                    default=int(os.environ.get("TRELLIS_TOKENS", 196_608)))
     ap.add_argument("--steps", type=int,
                     default=int(os.environ.get("TRELLIS_STEPS", 30)))
     args = ap.parse_args()
