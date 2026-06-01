@@ -15,6 +15,41 @@ import sys
 from pathlib import Path
 
 
+def _alias_legacy_controlnet() -> None:
+    """Make `diffusers.models.controlnet` resolve on diffusers>=0.37 (where it was
+    moved to `diffusers.models.controlnets.controlnet`). Idempotent + non-fatal."""
+    import importlib
+    import sys
+    import types
+    name = "diffusers.models.controlnet"
+    try:
+        importlib.import_module(name)
+        return  # already importable (older diffusers) — nothing to do
+    except Exception:  # noqa: BLE001
+        pass
+    # Prefer aliasing the whole relocated module (exposes every symbol).
+    for cand in ("diffusers.models.controlnets.controlnet",
+                 "diffusers.models.controlnets"):
+        try:
+            m = importlib.import_module(cand)
+            if hasattr(m, "ControlNetOutput"):
+                sys.modules[name] = m
+                return
+        except Exception:  # noqa: BLE001
+            continue
+    # Last resort: a stub carrying just ControlNetOutput from wherever it lives.
+    stub = types.ModuleType(name)
+    for cand in ("diffusers.models.controlnets.controlnet", "diffusers"):
+        try:
+            m = importlib.import_module(cand)
+            if hasattr(m, "ControlNetOutput"):
+                stub.ControlNetOutput = m.ControlNetOutput
+                break
+        except Exception:  # noqa: BLE001
+            continue
+    sys.modules[name] = stub
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--image",  required=True)
@@ -40,6 +75,14 @@ def main() -> int:
     print(f"[hi3dgen] loading geometry pipeline {args.model} ...", flush=True)
     pipe = Hi3DGenPipeline.from_pretrained(args.model)
     pipe.cuda()
+
+    # StableNormal's trust_remote_code module imports `diffusers.models.controlnet`,
+    # which newer diffusers (>=~0.32, ours is 0.37.1) moved to
+    # `diffusers.models.controlnets.controlnet`. Downgrading diffusers would
+    # regress the other engines, so alias the old path to the new module — only
+    # in this subprocess. Aliasing the whole module exposes ALL its symbols
+    # (ControlNetOutput, ControlNetModel, ...), not just one.
+    _alias_legacy_controlnet()
 
     print(f"[hi3dgen] loading StableNormal estimator ({args.yoso}) ...", flush=True)
     normal_predictor = torch.hub.load(
