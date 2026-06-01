@@ -262,11 +262,26 @@ def main() -> int:
             except Exception as e:  # noqa: BLE001
                 print(f"[trellis] WARN decimation failed ({e}); raw mesh", flush=True)
 
-    # Orientation: TRELLIS.2 up = -Y (glTF); our gauntlet + slicer are Z-up.
+    # Manifold cleanup (fast trimesh ops): cumesh emits doubled vertices at
+    # seams which read as non-manifold edges. Merge coincident verts + drop
+    # degenerate/duplicate faces + fix winding/normals — resolves most NM edges
+    # without the slow CPU pymeshfix.
+    try:
+        mesh.merge_vertices()
+        mesh.update_faces(mesh.nondegenerate_faces())
+        mesh.update_faces(mesh.unique_faces())
+        mesh.remove_unreferenced_vertices()
+        trimesh.repair.fix_winding(mesh)
+        trimesh.repair.fix_normals(mesh)
+    except Exception as e:  # noqa: BLE001
+        print(f"[trellis] WARN manifold cleanup partial ({e})", flush=True)
+
+    # Orientation: the o_voxel coord swap leaves the model glTF Y-up; our gauntlet
+    # + slicer are Z-up. Rotate +90 deg about X so +Y (up) -> +Z (up) = upright.
     mesh.apply_transform(
-        trimesh.transformations.rotation_matrix(-np.pi / 2.0, [1, 0, 0]))
+        trimesh.transformations.rotation_matrix(np.pi / 2.0, [1, 0, 0]))
     print(f"[trellis] final mesh: {len(mesh.faces)} faces, "
-          f"watertight={mesh.is_watertight} (Z-up)", flush=True)
+          f"watertight={mesh.is_watertight} (Z-up upright)", flush=True)
 
     out = Path(args.output); out.parent.mkdir(parents=True, exist_ok=True)
     mesh.export(str(out))
