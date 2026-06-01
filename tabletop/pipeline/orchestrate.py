@@ -602,13 +602,20 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
                     gauntlet_args = ["--no-orient", "--force-voxel", str(mini_vox)]
                     print(f"  [2b/4] mesh gauntlet (mini-heal voxel {mini_vox}mm)...")
                 elif engine in ("trellis", "hi3dgen"):
-                    # o_voxel ALREADY remeshed + cleaned the mesh. pymeshfix repair
-                    # on 1M+ faces is slow AND re-fans residual boundaries; the
-                    # voxel-remesh solidify smears detail; Tweaker tips figures on
-                    # their back. So do the MINIMUM: drop floaters + scale + seat.
-                    # Any minor non-manifold left is auto-repaired by the slicer.
-                    gauntlet_args = ["--no-orient", "--no-solidify", "--no-repair"]
-                    print(f"  [2b/4] mesh gauntlet (TRELLIS/Hi3DGen: floaters + scale + seat, no repair)...")
+                    if os.environ.get("TRELLIS_PRINTSAFE", "0") == "1":
+                        # PRINT-SAFE: voxel-remesh at print resolution. Thickens
+                        # thin/degenerate features (magic wisps, flowing hair, paper
+                        # fabric) into a real solid + deletes near-zero-thickness
+                        # sheets the slicer can't process. Makes dramatic/effect-
+                        # heavy subjects printable, at the cost of fine detail.
+                        psv = max(0.3, round(scale_mm / 400.0, 2))
+                        gauntlet_args = ["--no-orient", "--force-voxel", str(psv)]
+                        print(f"  [2b/4] mesh gauntlet (PRINT-SAFE voxel-remesh {psv}mm — thickens thin features)...")
+                    else:
+                        # o_voxel ALREADY remeshed + cleaned the mesh, so do the
+                        # MINIMUM: drop floaters + scale + seat (keeps full detail).
+                        gauntlet_args = ["--no-orient", "--no-solidify", "--no-repair"]
+                        print(f"  [2b/4] mesh gauntlet (TRELLIS/Hi3DGen: floaters + scale + seat, no repair)...")
                 elif engine == "hunyuan21":
                     # SDF mesh — keep pymeshfix repair, but no orient/solidify.
                     gauntlet_args = ["--no-orient", "--no-solidify"]
