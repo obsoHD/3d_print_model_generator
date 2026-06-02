@@ -56,6 +56,12 @@ node_modules/
 Thumbs.db
 *.tmp
 
+# --- Runtime data bind-mount (HF token, model cache, outputs) — NEVER commit ---
+data/
+/data/
+**/hf/token
+**/hf/stored_tokens
+
 # --- Secrets ---
 .env
 *.env
