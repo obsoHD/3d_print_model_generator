@@ -120,42 +120,100 @@ def _trellis_geometry_mesh(m, max_faces, remesh=True,
     return trimesh.Trimesh(vertices=conv, faces=of, process=False)
 
 
+def _install_multidiffusion():
+    """Enable MULTI-VIEW conditioning on the dense sparse-structure (occupancy)
+    sampler via *multidiffusion*.
+
+    TRELLIS.2 is NOT built to take a concatenated multi-image conditioning in one
+    forward pass — get_cond([imgA,imgB,imgC]) returns a BATCH-V conditioning
+    ([V, N, feat]) while the noise is batch-1, so the cross-attention dims clash
+    ('size of tensor a (384) must match b (128)'). The correct fusion is the
+    classic multidiffusion trick: run the model once PER VIEW and AVERAGE the
+    velocity predictions. We do that by replicating the batch-1 latent x_t across
+    the V conditioning views, running the model batched, then mean-reducing back
+    to batch-1 — mathematically the per-step average of the per-view predictions.
+    Every view 'votes' on where geometry should be, so the occluded back/sides get
+    filled from the views that actually see them.
+
+    We patch ONLY the base FlowEulerSampler._inference_model (a class method, so the
+    mixin super() chain hits it). It's a no-op whenever cond batch == latent batch
+    (V == 1), so the single-image path and the sparse-latent SLat stages — which we
+    deliberately keep single-view — are completely unaffected."""
+    from trellis2.pipelines.samplers import flow_euler
+    if getattr(flow_euler.FlowEulerSampler, "_mv_patched", False):
+        return
+    import torch
+    _orig = flow_euler.FlowEulerSampler._inference_model
+
+    def _inf(self, model, x_t, t, cond, **kwargs):
+        # Fuse only when cond carries multiple views AND x_t is a plain dense
+        # batch-1 tensor (the sparse-structure stage). SparseTensor latents or
+        # already-matched batches fall straight through to the original impl.
+        try:
+            v = cond.shape[0] if torch.is_tensor(cond) else 1
+            b = x_t.shape[0] if torch.is_tensor(x_t) else None
+        except Exception:
+            return _orig(self, model, x_t, t, cond, **kwargs)
+        if torch.is_tensor(x_t) and v and v > 1 and b == 1:
+            reps = [v] + [1] * (x_t.dim() - 1)
+            x_rep = x_t.repeat(*reps)
+            if torch.is_tensor(t) and t.dim() >= 1 and t.shape[0] == 1:
+                t_rep = t.repeat(v)
+            else:
+                t_rep = t
+            out = model(x_rep, t_rep, cond, **kwargs)
+            return out.mean(dim=0, keepdim=True)
+        return _orig(self, model, x_t, t, cond, **kwargs)
+
+    flow_euler.FlowEulerSampler._inference_model = _inf
+    flow_euler.FlowEulerSampler._mv_patched = True
+    print("  [trellis-mv] multidiffusion patch installed (occupancy stage)", flush=True)
+
+
 def _run_multi(pipe, images, seed, steps, max_tokens):
-    """TRELLIS.2 MULTI-VIEW run. Mirrors the upstream run() body but conditions
-    on a LIST of images (front/side/back) instead of one — run() already calls
-    get_cond([image], ...) with a list, so multi-view is just passing several.
-    The fused conditioning gives the samplers real data for the occluded sides,
-    so the back/folds are reconstructed instead of left as flat-filled gaps."""
+    """TRELLIS.2 MULTI-VIEW run.
+
+    Strategy: condition the OCCUPANCY (dense sparse-structure) stage on ALL views
+    via multidiffusion (see _install_multidiffusion) so the model knows the object
+    is solid on the back/sides — that's what eliminates the flat-filled occlusion
+    gaps. The SURFACE stages (shape SLat / tex SLat) stay conditioned on the FRONT
+    view only: those operate on SPARSE latents where per-view averaging is unstable,
+    and once the occupancy is correct the front view refines the existing surface
+    fine. Net: multi-view solidity + front-faithful detail."""
     import torch
     pt = pipe.default_pipeline_type
     imgs = [pipe.preprocess_image(im) for im in images]
+    front = [imgs[0]]
     torch.manual_seed(seed)
-    cond_512 = pipe.get_cond(imgs, 512)
-    cond_1024 = pipe.get_cond(imgs, 1024) if pt != '512' else None
+    _install_multidiffusion()
+    # Multi-view cond -> occupancy.  Front-only cond -> surface.
+    cond_mv_512 = pipe.get_cond(imgs, 512)
+    cond_s_512  = pipe.get_cond(front, 512)
+    cond_s_1024 = pipe.get_cond(front, 1024) if pt != '512' else None
     ss_res = {'512': 32, '1024': 64, '1024_cascade': 32, '1536_cascade': 32}[pt]
     sp = {"steps": int(steps)}
-    coords = pipe.sample_sparse_structure(cond_512, ss_res, 1, sp)
+    coords = pipe.sample_sparse_structure(cond_mv_512, ss_res, 1, sp)
     if pt == '512':
         shape_slat = pipe.sample_shape_slat(
-            cond_512, pipe.models['shape_slat_flow_model_512'], coords, sp)
+            cond_s_512, pipe.models['shape_slat_flow_model_512'], coords, sp)
         tex_slat = pipe.sample_tex_slat(
-            cond_512, pipe.models['tex_slat_flow_model_512'], shape_slat, sp)
+            cond_s_512, pipe.models['tex_slat_flow_model_512'], shape_slat, sp)
         res = 512
     elif pt == '1024':
         shape_slat = pipe.sample_shape_slat(
-            cond_1024, pipe.models['shape_slat_flow_model_1024'], coords, sp)
+            cond_s_1024, pipe.models['shape_slat_flow_model_1024'], coords, sp)
         tex_slat = pipe.sample_tex_slat(
-            cond_1024, pipe.models['tex_slat_flow_model_1024'], shape_slat, sp)
+            cond_s_1024, pipe.models['tex_slat_flow_model_1024'], shape_slat, sp)
         res = 1024
     else:  # 1024_cascade / 1536_cascade
         hi = 1536 if pt == '1536_cascade' else 1024
         shape_slat, res = pipe.sample_shape_slat_cascade(
-            cond_512, cond_1024,
+            cond_s_512, cond_s_1024,
             pipe.models['shape_slat_flow_model_512'],
             pipe.models['shape_slat_flow_model_1024'],
             512, hi, coords, sp, int(max_tokens))
         tex_slat = pipe.sample_tex_slat(
-            cond_1024, pipe.models['tex_slat_flow_model_1024'], shape_slat, sp)
+            cond_s_1024, pipe.models['tex_slat_flow_model_1024'], shape_slat, sp)
     torch.cuda.empty_cache()
     return pipe.decode_latent(shape_slat, tex_slat, res)[0]
 
