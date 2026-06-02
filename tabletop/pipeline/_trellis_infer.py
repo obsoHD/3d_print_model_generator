@@ -45,6 +45,73 @@ def _force_xformers_cutlass() -> None:
     print("[trellis] forced xformers CUTLASS attention (Blackwell-safe)", flush=True)
 
 
+def _signed_distance(bvh, pts, chunk=1_000_000):
+    """cuBVH signed distance, chunked (the raw remesh can be ~16M face centers).
+    Prefer mode='raystab' (robust on the non-watertight source mesh) when the
+    build supports it; otherwise call with defaults. Tolerates tuple returns."""
+    import torch
+    use_mode = False
+    try:
+        bvh.signed_distance(pts[:8].contiguous(), mode="raystab")
+        use_mode = True
+    except TypeError:
+        use_mode = False
+    except Exception:  # noqa: BLE001 — probe failure; fall back to plain call
+        use_mode = False
+    outs = []
+    for i in range(0, pts.shape[0], chunk):
+        sub = pts[i:i + chunk].contiguous()
+        r = bvh.signed_distance(sub, mode="raystab") if use_mode \
+            else bvh.signed_distance(sub)
+        if isinstance(r, (tuple, list)):
+            r = r[0]
+        outs.append(r.reshape(-1))
+    return torch.cat(outs, dim=0)
+
+
+def _cull_inner_shell(mesh, bvh, voxel, verbose=True):
+    """Collapse the UDF dual-contouring DOUBLE shell to a single OUTER shell.
+
+    The narrow-band unsigned-field DC emits an outer sheet (~+1 voxel from the
+    surface) AND a concentric inner sheet (~-1 voxel). We classify each remeshed
+    face by the signed distance of its centroid to the ORIGINAL surface (via the
+    BVH already built for projection) and keep only the faces on/outside the
+    surface, deleting the inner sheet — exactly what the fork's remove_inner_faces
+    does, but reimplemented because this cumesh build lacks that flag. Guarded:
+    only culls when the 'inner' fraction is in a plausible double-shell range, so
+    a flipped sign convention or a single-shell input can't nuke the model."""
+    import torch
+    v, f = mesh.read()
+    if f.shape[0] == 0:
+        return
+    centers = v[f.long()].mean(dim=1).contiguous()
+    try:
+        sd = _signed_distance(bvh, centers).to(centers.device).reshape(-1)
+    except Exception as e:  # noqa: BLE001
+        print(f"  [trellis] inner-shell cull SKIPPED (signed_distance failed: {e})",
+              flush=True)
+        return
+    thr = -0.25 * float(voxel)             # ~quarter-voxel inside = inner sheet
+    inner = sd < thr
+    n_inner = int(inner.sum().item())
+    n_tot = int(f.shape[0])
+    frac = n_inner / max(1, n_tot)
+    if n_inner > 0 and 0.05 <= frac <= 0.95:
+        keep = ~inner
+        mesh.init(v.contiguous(), f[keep].contiguous())
+        try:
+            mesh.remove_unreferenced_vertices()
+        except Exception:  # noqa: BLE001
+            pass
+        if verbose:
+            print(f"  [trellis] inner-shell cull: dropped {n_inner}/{n_tot} inner "
+                  f"faces ({frac*100:.0f}%) via BVH signed-distance "
+                  "(UDF double-shell collapse)", flush=True)
+    elif verbose:
+        print(f"  [trellis] inner-shell cull: skipped — inner frac {frac*100:.0f}% "
+              "outside safe 5-95% range (no clear double shell)", flush=True)
+
+
 def _manifold_stats(mesh):
     """TRUE 2-manifold diagnostics. trimesh.is_watertight is BLIND to edges shared
     by >2 faces (group_rows(require_count=2) silently discards them) — the exact
@@ -126,45 +193,25 @@ def _trellis_geometry_mesh(m, max_faces, remesh=True,
         scale = (aabb[1] - aabb[0]).max().item()
         resolution = grid_size.max().item()
         # ROOT-CAUSE FIX (9-agent research panel, high confidence).
-        # remesh_narrow_band_dc contours an UNSIGNED distance field at +eps
-        # (simple_dual_contour(..., dist - eps, ...)). A UDF has no inside/outside
-        # sign, so |dist| = eps is satisfied on BOTH sides of the true surface ->
-        # dual contouring emits a DOUBLED shell (inner + outer, ~2 voxels apart)
-        # UNIFORMLY over the whole model. That doubled shell — not our cleanup —
-        # is the source of the "tiny triangle holes + non-manifold edges
-        # everywhere" (present single-view too): every seam edge is shared by >2
-        # faces, and the inner sheet z-fights the outer. cumesh's OWN remedy is
-        # the `remove_inner_faces` raystab SDF filter, which DEFAULTS OFF and was
-        # never passed. Turn it ON so the inner sheet is deleted BEFORE any
-        # triangulation/weld can form a seam. (Older cumesh builds lack the kwarg;
-        # fall back to the _quad variant whose default is already True, then to
-        # plain.) Expect face count to drop ~30-50% — that's the inner shell going.
-        rk = dict(center=center,
-                  scale=(resolution + 3 * remesh_band) / resolution * scale,
-                  resolution=resolution, band=remesh_band,
-                  project_back=remesh_project, verbose=verbose, bvh=bvh)
-        try:
-            rm = cumesh.remeshing.remesh_narrow_band_dc(
-                v, f, remove_inner_faces=True, **rk)
-            print("  [trellis] remesh: remove_inner_faces=True "
-                  "(collapse UDF double-shell at source)", flush=True)
-        except TypeError:
-            _quad = getattr(cumesh.remeshing, "remesh_narrow_band_dc_quad", None)
-            if _quad is not None:
-                try:
-                    rm = _quad(v, f, **rk)
-                    print("  [trellis] remesh: remove_inner_faces unsupported -> "
-                          "used remesh_narrow_band_dc_quad (inner-removal default)",
-                          flush=True)
-                except Exception:
-                    rm = cumesh.remeshing.remesh_narrow_band_dc(v, f, **rk)
-                    print("  [trellis] remesh: WARNING inner-removal unavailable "
-                          "(double shell may persist)", flush=True)
-            else:
-                rm = cumesh.remeshing.remesh_narrow_band_dc(v, f, **rk)
-                print("  [trellis] remesh: WARNING inner-removal unavailable "
-                      "(double shell may persist)", flush=True)
-        mesh.init(*rm)
+        # remesh_narrow_band_dc contours an UNSIGNED distance field at +eps. A UDF
+        # has no inside/outside sign, so the |dist|=eps level set is satisfied on
+        # BOTH sides of the true surface -> dual contouring emits a DOUBLED shell
+        # (inner + outer, ~2 voxels apart) UNIFORMLY over the whole model. That
+        # doubled shell — not our cleanup — is the source of the "tiny triangle
+        # holes + non-manifold edges everywhere" (present single-view too): every
+        # seam edge is shared by >2 faces and the inner sheet z-fights the outer.
+        # The fork's `remove_inner_faces` cure does NOT exist in this cumesh build
+        # (verified: remesh_narrow_band_dc has no such kwarg), so we replicate it
+        # ourselves with the cuBVH the function already needs: classify every
+        # remeshed face by the SIGNED distance of its centroid to the ORIGINAL
+        # surface and DELETE the inner sheet. cuBVH.signed_distance exists on this
+        # build. Expect ~half the faces to drop — that's the inner shell going.
+        scale_passed = (resolution + 3 * remesh_band) / resolution * scale
+        mesh.init(*cumesh.remeshing.remesh_narrow_band_dc(
+            v, f, center=center, scale=scale_passed,
+            resolution=resolution, band=remesh_band,
+            project_back=remesh_project, verbose=verbose, bvh=bvh))
+        _cull_inner_shell(mesh, bvh, scale_passed / resolution, verbose=verbose)
         mesh.simplify(int(max_faces), verbose=verbose)
         # With the inner shell gone the surface is near-2-manifold. Clean it
         # WITHOUT cumesh.repair_non_manifold_edges() — that op SPLITS vertices into
