@@ -1148,6 +1148,16 @@ main{display:grid;grid-template-columns:260px 1fr 320px;gap:14px;padding:14px;
         <span>Generate with colour
           <span style="color:var(--dim3);font-size:11px">— TRELLIS only · slower (bakes texture) · for preview, not the print</span></span>
       </label>
+      <label style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;
+        font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--dim2)">
+        Print detail <span style="font-weight:500;text-transform:none;letter-spacing:normal;color:var(--dim3);font-size:11px">— alpha-wrap fineness (TRELLIS). Finer = sharper but slower.</span>
+        <select id="wz-detail" style="padding:9px 11px;font-size:13px;text-transform:none;letter-spacing:normal;font-weight:500">
+          <option value="balanced" selected>Balanced — ~0.5&nbsp;mm, ~5&nbsp;min (default)</option>
+          <option value="fast">Fast — ~0.7&nbsp;mm, ~3&nbsp;min (rough proxies)</option>
+          <option value="fine">Fine — ~0.34&nbsp;mm, ~12&nbsp;min (final minis)</option>
+          <option value="ultra">Ultra — ~0.23&nbsp;mm, ~25&nbsp;min (hero pieces)</option>
+        </select>
+      </label>
       <div class="wz-summary" id="wz-summary"></div>
       <div class="wz-foot">
         <button class="btn" onclick="wzGoto(2)">← Back</button>
@@ -1171,6 +1181,7 @@ function wzReset(){
   WZ.single=null; WZ.mv={front:null,left:null,back:null,gif:null};
   const nmEl=document.getElementById('wz-name'); if(nmEl) nmEl.value='';
   const ccb=document.getElementById('wz-color'); if(ccb) ccb.checked=false;
+  const dsel=document.getElementById('wz-detail'); if(dsel) dsel.value='balanced';
   document.querySelectorAll('.wz-card').forEach(c=>c.classList.remove('sel'));
   document.getElementById('wz-next1').disabled=true;
   document.getElementById('wz-concept-prev').style.display='none';
@@ -1300,6 +1311,7 @@ async function wzStart(){
   const nameEl = document.getElementById('wz-name');
   const userName = (nameEl && nameEl.value.trim()) || '';
   const withColor = !!(document.getElementById('wz-color') || {}).checked;
+  const detail = ((document.getElementById('wz-detail') || {}).value) || 'balanced';
   let body;
   if(single){
     const kind=document.getElementById('wz-kind').value;
@@ -1307,13 +1319,13 @@ async function wzStart(){
     // Use whatever input exists — an uploaded image wins regardless of which
     // tab is active; otherwise fall back to a prompt-generated concept.
     if(WZ.single){
-      body={engine:WZ.engine,kind,printer,with_color:withColor,
+      body={engine:WZ.engine,kind,printer,with_color:withColor,detail,
         prompt:(userName || 'uploaded subject'),
         concept_image_data_url:WZ.single};
     } else if(WZ.conceptPath){
       // Prompt-generated concept: the typed prompt names it, but an explicit
       // name overrides for a cleaner label.
-      body={engine:WZ.engine,kind,printer,with_color:withColor,
+      body={engine:WZ.engine,kind,printer,with_color:withColor,detail,
         prompt:(userName || document.getElementById('wz-prompt').value.trim() || 'concept'),
         input_image_path:WZ.conceptPath};
     } else {
@@ -1322,7 +1334,7 @@ async function wzStart(){
   } else {
     const kind=document.getElementById('wz-kind2').value;
     const printer=document.getElementById('wz-printer2').value;
-    body={engine:(WZ.engine||'hunyuan2mv'),kind,printer,with_color:withColor,
+    body={engine:(WZ.engine||'hunyuan2mv'),kind,printer,with_color:withColor,detail,
       prompt:(userName || 'multiview subject'),
       mv_reverse:document.getElementById('wz-reverse').checked};
     if(WZ.mvmode==='gif') body.mv_gif_data=WZ.mv.gif;

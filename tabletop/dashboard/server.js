@@ -506,7 +506,7 @@ function launchRun(opts) {
   const { prompt, kind='terrain', engine='hunyuan', printer='resin',
           seed, mv_engine, concept_image_data_url, input_image_path,
           mv_front_data, mv_left_data, mv_back_data, mv_gif_data,
-          mv_reverse, with_color } = opts;
+          mv_reverse, with_color, detail } = opts;
   if (_stageCache.running) return { ok: false, error: 'pipeline already running — kill it first' };
   const pipeDir = path.join(TABLETOP, 'pipeline');
 
@@ -529,7 +529,7 @@ function launchRun(opts) {
       args.push('--mv-front', f, '--mv-left', l, '--mv-back', b);
     }
     if (mv_reverse) args.push('--mv-reverse');
-    return _spawnOrchestrate(args, slugmv, prompt || 'multiview', kind, engine, null, with_color);
+    return _spawnOrchestrate(args, slugmv, prompt || 'multiview', kind, engine, null, with_color, detail);
   }
 
   // Either a prompt OR an uploaded image is required
@@ -558,10 +558,14 @@ function launchRun(opts) {
     '--engine', engine, '--printer', printer, '--out', outStl];
   if (seed) args.push('--seed', String(seed));
   if (inputImagePath) args.push('--input-image', inputImagePath);
-  return _spawnOrchestrate(args, slug, prompt, kind, engine, mv_engine, with_color);
+  return _spawnOrchestrate(args, slug, prompt, kind, engine, mv_engine, with_color, detail);
 }
 
-function _spawnOrchestrate(args, slug, prompt, kind, engine, mv_engine, withColor) {
+// Print-detail presets -> alpha-wrap fineness (percent of bbox diagonal). Finer
+// = sharper but the CGAL wrap is CPU and scales ~1/alpha^2, so slower.
+const DETAIL_ALPHA = { fast: '0.45', balanced: '0.3', fine: '0.15', ultra: '0.1' };
+
+function _spawnOrchestrate(args, slug, prompt, kind, engine, mv_engine, withColor, detail) {
   const pipeDir = path.join(TABLETOP, 'pipeline');
   const outStl = args[args.indexOf('--out') + 1];
 
@@ -576,6 +580,8 @@ function _spawnOrchestrate(args, slug, prompt, kind, engine, mv_engine, withColo
   if (mv_engine) childEnv.MV_ENGINE = mv_engine;
   // "Generate with colour" -> bake the TRELLIS.2 texture (slower; viewer-only).
   if (withColor) childEnv.TRELLIS_TEXTURE = '1';
+  // Print-detail preset -> alpha-wrap fineness (TRELLIS engines).
+  if (detail && DETAIL_ALPHA[detail]) childEnv.TRELLIS_ALPHA = DETAIL_ALPHA[detail];
   // detached + unref so the orchestrator survives dashboard server restarts.
   // Without this, stopping the dashboard process kills its child (HY3D, etc).
   const child = cp.spawn(process.env.GEN3D_PY || 'python', ['-u', ...args], {

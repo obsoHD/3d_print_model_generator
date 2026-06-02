@@ -272,6 +272,18 @@ def _is_clean_manifold(mesh):
     return _manifold_score(mesh) == 0
 
 
+def _is_printable_manifold(mesh):
+    """Printable = watertight + zero non-manifold edges. Component count is
+    IGNORED: a multi-body watertight manifold (figure + base + sword) is perfectly
+    printable, and the gauntlet drops tiny floaters. Used to gate the legacy
+    softening passes OFF once alpha-wrap has produced a clean result."""
+    try:
+        s = _manifold_stats(mesh)
+        return bool(s["watertight"]) and s["nm_edges"] == 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _manifold_str(mesh):
     s = _manifold_stats(mesh)
     return (f"watertight={s['watertight']} nm_edges={s['nm_edges']} "
@@ -640,7 +652,7 @@ def main() -> int:
     # watertight 2-manifold around the whole figure — robust to all of that, keeps
     # the model. This is the printable geometry. Set TRELLIS_ALPHAWRAP=0 to A/B the
     # raw mesh (and fall through to the legacy additive cleanup below).
-    if os.environ.get("TRELLIS_ALPHAWRAP", "1") != "0" and not _is_clean_manifold(mesh):
+    if os.environ.get("TRELLIS_ALPHAWRAP", "1") != "0" and not _is_printable_manifold(mesh):
         wrapped = _alpha_wrap_remesh(mesh, verbose=True)
         # Accept only if it kept a real volume (alpha wrap encloses, so it should
         # never collapse — but guard anyway) and is actually cleaner.
@@ -698,7 +710,9 @@ def main() -> int:
     # keep Taubin opt-in (default OFF), and accept the candidate only if it is no
     # worse by a TRUE manifold score (is_watertight alone is blind to >2-face
     # edges, which is exactly why trimesh said watertight while the slicer split).
-    if not _is_clean_manifold(mesh):
+    # NOTE: skipped entirely once alpha-wrap has produced a printable manifold —
+    # merging vertices on the clean wrap only BLURS detail (the user's complaint).
+    if not _is_printable_manifold(mesh):
         try:
             import numpy as _np
             import pymeshlab
