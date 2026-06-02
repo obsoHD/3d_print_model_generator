@@ -149,6 +149,12 @@ def _install_multidiffusion():
         # Fuse only when cond carries multiple views AND x_t is a plain dense
         # batch-1 tensor (the sparse-structure stage). SparseTensor latents or
         # already-matched batches fall straight through to the original impl.
+        #
+        # We REPLICATE the latent to batch-V and hand it to the ORIGINAL
+        # _inference_model — that's important because the original is what turns
+        # the scalar float timestep `t` into the [batch]-shaped tensor the model
+        # needs (`t.device`/`t[:,None]`). Sizing off x_rep.shape[0] gives a [V] t
+        # automatically. Then we mean-reduce the [V,...] velocity back to [1,...].
         try:
             v = cond.shape[0] if torch.is_tensor(cond) else 1
             b = x_t.shape[0] if torch.is_tensor(x_t) else None
@@ -157,11 +163,7 @@ def _install_multidiffusion():
         if torch.is_tensor(x_t) and v and v > 1 and b == 1:
             reps = [v] + [1] * (x_t.dim() - 1)
             x_rep = x_t.repeat(*reps)
-            if torch.is_tensor(t) and t.dim() >= 1 and t.shape[0] == 1:
-                t_rep = t.repeat(v)
-            else:
-                t_rep = t
-            out = model(x_rep, t_rep, cond, **kwargs)
+            out = _orig(self, model, x_rep, t, cond, **kwargs)
             return out.mean(dim=0, keepdim=True)
         return _orig(self, model, x_t, t, cond, **kwargs)
 
