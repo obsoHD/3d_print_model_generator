@@ -155,7 +155,10 @@ def _pymeshfix_manifold(mesh, min_faces=200, verbose=True):
     #    and remove self-intersections — instead of inflating each patch into a
     #    thin closed bag (what per-component repair would do).
     def _repair(v, f):
-        tin = _meshfix.PyTMesh(False)  # quiet
+        try:
+            tin = _meshfix.PyTMesh(False)  # quiet, if supported
+        except TypeError:
+            tin = _meshfix.PyTMesh()       # this build: no ctor args
         tin.load_array(np.asarray(v, dtype=np.float64),
                        np.asarray(f, dtype=np.int32))
         try:
