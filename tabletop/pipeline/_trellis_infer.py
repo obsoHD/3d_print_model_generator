@@ -188,7 +188,7 @@ def _pymeshfix_manifold(mesh, min_faces=200, verbose=True):
     return out
 
 
-def _alpha_wrap_remesh(mesh, alpha_fraction=None, verbose=True):
+def _alpha_wrap_remesh(mesh, alpha_pct=None, verbose=True):
     """CGAL Alpha Wrapping via pymeshlab.generate_alpha_wrap — the field-standard,
     soup-ROBUST way to turn a self-intersecting / non-manifold / fragmented neural
     mesh into a single WATERTIGHT, 2-manifold, intersection-free surface that
@@ -196,23 +196,26 @@ def _alpha_wrap_remesh(mesh, alpha_fraction=None, verbose=True):
     from outside until it hits the geometry, so overlapping shells, 1000 floaters
     and 20k self-intersections simply don't matter; the whole figure is kept.
 
-    alpha_fraction = carving cell size as a fraction of the bbox diagonal (smaller
-    = finer detail but more compute). offset_fraction = how tightly it hugs the
-    surface (CGAL recommends alpha/30). Default alpha ~ diag/500 ~= 0.4mm on a
-    160mm mini — recovers face/cloth detail while staying robust. Tune via
-    TRELLIS_ALPHA (e.g. 0.0015 finer / 0.003 coarser+faster)."""
+    On THIS pymeshlab build the params are `alpha` and `offset`, each a
+    pymeshlab.PercentageValue (PERCENT of the bbox diagonal). alpha = carving cell
+    size (smaller % = finer detail, more compute); offset = how far outside the
+    surface the wrap sits (CGAL recommends ~alpha/30). Default alpha 0.3% of diag
+    (~diag/333, ~0.7mm on a 160mm mini) — robust + detailed. Tune via TRELLIS_ALPHA
+    as a PERCENT (e.g. 0.2 finer, 0.5 coarser+faster)."""
     import time
     import trimesh
     import pymeshlab
-    af = alpha_fraction if alpha_fraction is not None else \
-        float(os.environ.get("TRELLIS_ALPHA", "0.002"))
-    of = af / 30.0
+    ap = alpha_pct if alpha_pct is not None else \
+        float(os.environ.get("TRELLIS_ALPHA", "0.3"))
+    op = ap / 30.0
+    # Percentage class name differs across builds.
+    PV = getattr(pymeshlab, "PercentageValue", None) or getattr(pymeshlab, "Percentage")
     t0 = time.time()
     try:
         ms = pymeshlab.MeshSet()
         ms.add_mesh(pymeshlab.Mesh(vertex_matrix=mesh.vertices.astype("float64"),
                                    face_matrix=mesh.faces.astype("int32")))
-        ms.generate_alpha_wrap(alpha_fraction=af, offset_fraction=of)
+        ms.generate_alpha_wrap(alpha=PV(ap), offset=PV(op))
         cm = ms.current_mesh()
         out = trimesh.Trimesh(vertices=cm.vertex_matrix(),
                               faces=cm.face_matrix(), process=False)
@@ -222,7 +225,7 @@ def _alpha_wrap_remesh(mesh, alpha_fraction=None, verbose=True):
             return mesh
         if verbose:
             print(f"[trellis] alpha-wrap: {len(mesh.faces)} -> {len(out.faces)} "
-                  f"faces (alpha={af}, offset={of:.5f}) | {_manifold_str(out)} | "
+                  f"faces (alpha={ap}% offset={op:.4f}%) | {_manifold_str(out)} | "
                   f"{time.time()-t0:.1f}s", flush=True)
         return out
     except Exception as e:  # noqa: BLE001
