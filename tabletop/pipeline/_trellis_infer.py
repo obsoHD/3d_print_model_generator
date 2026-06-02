@@ -124,7 +124,7 @@ def _pymeshfix_manifold(mesh, min_faces=200, verbose=True):
     import numpy as np
     import trimesh
     try:
-        from pymeshfix import MeshFix
+        from pymeshfix import _meshfix
     except Exception as e:  # noqa: BLE001
         print(f"[trellis] pymeshfix unavailable ({e}); skipping manifold repair",
               flush=True)
@@ -147,25 +147,27 @@ def _pymeshfix_manifold(mesh, min_faces=200, verbose=True):
     else:
         dropped, base = 0, mesh
 
-    # 2) ONE MeshFix over the whole thing with joincomp=True: it stitches the
-    #    separate (mostly open) patches into a single coherent surface and closes
-    #    it into ONE watertight 2-manifold — instead of inflating each patch into
-    #    a thin closed bag (what per-component repair would do). Robust to the
-    #    0.18.x signature (no `verbose`): try kwarg combos, fall back to bare.
+    # 2) ONE repair over the whole thing via the STABLE low-level PyTMesh API
+    #    (the high-level MeshFix wrapper's result attributes differ across
+    #    versions — `mf.v` doesn't exist on 0.18.x). join_closest_components()
+    #    stitches the separate (mostly open) patches into one coherent surface,
+    #    fill_small_boundaries() + clean() close it into ONE watertight 2-manifold
+    #    and remove self-intersections — instead of inflating each patch into a
+    #    thin closed bag (what per-component repair would do).
     def _repair(v, f):
-        mf = MeshFix(np.asarray(v, dtype=np.float64),
-                     np.asarray(f, dtype=np.int32))
-        for kw in ({"joincomp": True, "remove_smallest_components": False},
-                   {"joincomp": True},
-                   {"remove_smallest_components": False},
-                   {}):
-            try:
-                mf.repair(**kw)
-                return mf.v, mf.f
-            except TypeError:
-                continue
-        mf.repair()
-        return mf.v, mf.f
+        tin = _meshfix.PyTMesh(False)  # quiet
+        tin.load_array(np.asarray(v, dtype=np.float64),
+                       np.asarray(f, dtype=np.int32))
+        try:
+            tin.join_closest_components()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            tin.fill_small_boundaries()
+        except Exception:  # noqa: BLE001
+            pass
+        tin.clean(max_iters=10, inner_loops=3)
+        return tin.return_arrays()
 
     try:
         rv, rf = _repair(base.vertices, base.faces)
