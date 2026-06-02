@@ -686,14 +686,20 @@ def main() -> int:
     # singularities, per connected component, so each part becomes one watertight
     # 2-manifold while detail is preserved elsewhere. Skip if already clean, or if
     # disabled via TRELLIS_MESHFIX=0 (e.g. to A/B the raw mesh).
-    if os.environ.get("TRELLIS_MESHFIX", "1") != "0" and not _is_clean_manifold(mesh):
+    if os.environ.get("TRELLIS_MESHFIX", "0") != "0" and not _is_clean_manifold(mesh):
         _mf_min = int(os.environ.get("TRELLIS_MESHFIX_MINFACES", "200"))
         repaired = _pymeshfix_manifold(mesh, min_faces=_mf_min, verbose=True)
-        if _manifold_score(repaired) <= _manifold_score(mesh):
+        # SAFETY: MeshFix.clean() deletes self-intersecting triangles, and on a
+        # triangle-soup input it can delete almost everything (1.97M -> 14k = just
+        # the cape) yet still report "watertight". NEVER accept a result that
+        # destroyed the model — require it to retain most of the geometry.
+        keep_frac = len(repaired.faces) / max(1, len(mesh.faces))
+        if keep_frac >= 0.5 and _manifold_score(repaired) <= _manifold_score(mesh):
             mesh = repaired
         else:
-            print("[trellis] pymeshfix made it worse; keeping pre-repair mesh",
-                  flush=True)
+            print(f"[trellis] pymeshfix REJECTED — kept only {keep_frac*100:.1f}% "
+                  f"of faces ({len(repaired.faces)}/{len(mesh.faces)}); it would "
+                  "destroy the model. Keeping pre-repair mesh.", flush=True)
 
     # Orientation: the o_voxel coord swap leaves the model glTF Y-up; our gauntlet
     # + slicer are Z-up. Rotate +90 deg about X so +Y (up) -> +Z (up) = upright.
