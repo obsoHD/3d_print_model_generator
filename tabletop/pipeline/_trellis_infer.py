@@ -130,37 +130,55 @@ def _pymeshfix_manifold(mesh, min_faces=200, verbose=True):
               flush=True)
         return mesh
     t0 = time.time()
+    # 1) Drop the tiny floater scatter, keep the meaningful parts. (The cumesh
+    #    chain fragments the shell into ~1000 components; most are sub-200-face
+    #    specks.)
     try:
         parts = mesh.split(only_watertight=False)
     except Exception:  # noqa: BLE001
         parts = []
-    if not parts:
-        parts = [mesh]
-    kept, dropped = [], 0
-    for p in parts:
-        if len(p.faces) < min_faces:
-            dropped += 1
-            continue
-        try:
-            mf = MeshFix(np.asarray(p.vertices, dtype=np.float64),
-                         np.asarray(p.faces, dtype=np.int32))
-            # joincomp=True stitches a part's own internal shells; we do NOT
-            # remove_smallest here (we already filtered floaters above) so the
-            # part isn't silently gutted.
-            mf.repair(verbose=False, joincomp=True,
-                      remove_smallest_components=False)
-            rp = trimesh.Trimesh(mf.v, mf.f, process=False)
-            kept.append(rp if len(rp.faces) else p)
-        except Exception as e:  # noqa: BLE001
-            print(f"[trellis] pymeshfix part skipped ({e}); keeping raw part",
-                  flush=True)
-            kept.append(p)
-    if not kept:
+    if parts:
+        big = [p for p in parts if len(p.faces) >= min_faces]
+        dropped = len(parts) - len(big)
+        if not big:
+            big = [max(parts, key=lambda p: len(p.faces))]
+            dropped = len(parts) - 1
+        base = trimesh.util.concatenate(big) if len(big) > 1 else big[0]
+    else:
+        dropped, base = 0, mesh
+
+    # 2) ONE MeshFix over the whole thing with joincomp=True: it stitches the
+    #    separate (mostly open) patches into a single coherent surface and closes
+    #    it into ONE watertight 2-manifold — instead of inflating each patch into
+    #    a thin closed bag (what per-component repair would do). Robust to the
+    #    0.18.x signature (no `verbose`): try kwarg combos, fall back to bare.
+    def _repair(v, f):
+        mf = MeshFix(np.asarray(v, dtype=np.float64),
+                     np.asarray(f, dtype=np.int32))
+        for kw in ({"joincomp": True, "remove_smallest_components": False},
+                   {"joincomp": True},
+                   {"remove_smallest_components": False},
+                   {}):
+            try:
+                mf.repair(**kw)
+                return mf.v, mf.f
+            except TypeError:
+                continue
+        mf.repair()
+        return mf.v, mf.f
+
+    try:
+        rv, rf = _repair(base.vertices, base.faces)
+        out = trimesh.Trimesh(rv, rf, process=False)
+    except Exception as e:  # noqa: BLE001
+        print(f"[trellis] pymeshfix failed ({e}); keeping pre-repair mesh",
+              flush=True)
         return mesh
-    out = trimesh.util.concatenate(kept) if len(kept) > 1 else kept[0]
+    if not len(out.faces):
+        return mesh
     if verbose:
-        print(f"[trellis] pymeshfix: {len(parts)} parts -> {len(kept)} kept "
-              f"({dropped} floaters dropped) | {len(out.faces)} faces | "
+        print(f"[trellis] pymeshfix: {len(parts)} parts, {dropped} floaters "
+              f"dropped, joined -> {len(out.faces)} faces | "
               f"{_manifold_str(out)} | {time.time()-t0:.1f}s", flush=True)
     return out
 
