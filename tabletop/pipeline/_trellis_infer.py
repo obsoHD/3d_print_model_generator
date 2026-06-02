@@ -45,6 +45,50 @@ def _force_xformers_cutlass() -> None:
     print("[trellis] forced xformers CUTLASS attention (Blackwell-safe)", flush=True)
 
 
+def _manifold_stats(mesh):
+    """TRUE 2-manifold diagnostics. trimesh.is_watertight is BLIND to edges shared
+    by >2 faces (group_rows(require_count=2) silently discards them) — the exact
+    defect a slicer rejects and the reason trimesh said 'watertight' while the
+    slicer split into hundreds of pieces. So we measure non-manifold edges and
+    connected-component count directly."""
+    import trimesh
+    try:
+        es = mesh.edges_sorted
+        g2 = trimesh.grouping.group_rows(es, require_count=2)
+        nm_edges = int(len(es) - 2 * len(g2))   # edges NOT shared by exactly 2 faces
+    except Exception:  # noqa: BLE001
+        nm_edges = -1
+    try:
+        comps = int(len(mesh.split(only_watertight=False)))
+    except Exception:  # noqa: BLE001
+        comps = -1
+    return {"watertight": bool(mesh.is_watertight),
+            "nm_edges": nm_edges, "components": comps}
+
+
+def _manifold_score(mesh):
+    """Lower = healthier; 0 == clean single watertight 2-manifold."""
+    s = _manifold_stats(mesh)
+    score = 0
+    if not s["watertight"]:
+        score += 1000
+    if s["nm_edges"] and s["nm_edges"] > 0:
+        score += s["nm_edges"]
+    if s["components"] and s["components"] > 1:
+        score += (s["components"] - 1)
+    return score
+
+
+def _is_clean_manifold(mesh):
+    return _manifold_score(mesh) == 0
+
+
+def _manifold_str(mesh):
+    s = _manifold_stats(mesh)
+    return (f"watertight={s['watertight']} nm_edges={s['nm_edges']} "
+            f"components={s['components']}")
+
+
 def _trellis_geometry_mesh(m, max_faces, remesh=True,
                            remesh_band=1.0,
                            remesh_project=float(os.environ.get(
@@ -81,23 +125,64 @@ def _trellis_geometry_mesh(m, max_faces, remesh=True,
         center = aabb.mean(dim=0)
         scale = (aabb[1] - aabb[0]).max().item()
         resolution = grid_size.max().item()
-        mesh.init(*cumesh.remeshing.remesh_narrow_band_dc(
-            v, f, center=center,
-            scale=(resolution + 3 * remesh_band) / resolution * scale,
-            resolution=resolution, band=remesh_band,
-            project_back=remesh_project, verbose=verbose, bvh=bvh))
+        # ROOT-CAUSE FIX (9-agent research panel, high confidence).
+        # remesh_narrow_band_dc contours an UNSIGNED distance field at +eps
+        # (simple_dual_contour(..., dist - eps, ...)). A UDF has no inside/outside
+        # sign, so |dist| = eps is satisfied on BOTH sides of the true surface ->
+        # dual contouring emits a DOUBLED shell (inner + outer, ~2 voxels apart)
+        # UNIFORMLY over the whole model. That doubled shell — not our cleanup —
+        # is the source of the "tiny triangle holes + non-manifold edges
+        # everywhere" (present single-view too): every seam edge is shared by >2
+        # faces, and the inner sheet z-fights the outer. cumesh's OWN remedy is
+        # the `remove_inner_faces` raystab SDF filter, which DEFAULTS OFF and was
+        # never passed. Turn it ON so the inner sheet is deleted BEFORE any
+        # triangulation/weld can form a seam. (Older cumesh builds lack the kwarg;
+        # fall back to the _quad variant whose default is already True, then to
+        # plain.) Expect face count to drop ~30-50% — that's the inner shell going.
+        rk = dict(center=center,
+                  scale=(resolution + 3 * remesh_band) / resolution * scale,
+                  resolution=resolution, band=remesh_band,
+                  project_back=remesh_project, verbose=verbose, bvh=bvh)
+        try:
+            rm = cumesh.remeshing.remesh_narrow_band_dc(
+                v, f, remove_inner_faces=True, **rk)
+            print("  [trellis] remesh: remove_inner_faces=True "
+                  "(collapse UDF double-shell at source)", flush=True)
+        except TypeError:
+            _quad = getattr(cumesh.remeshing, "remesh_narrow_band_dc_quad", None)
+            if _quad is not None:
+                try:
+                    rm = _quad(v, f, **rk)
+                    print("  [trellis] remesh: remove_inner_faces unsupported -> "
+                          "used remesh_narrow_band_dc_quad (inner-removal default)",
+                          flush=True)
+                except Exception:
+                    rm = cumesh.remeshing.remesh_narrow_band_dc(v, f, **rk)
+                    print("  [trellis] remesh: WARNING inner-removal unavailable "
+                          "(double shell may persist)", flush=True)
+            else:
+                rm = cumesh.remeshing.remesh_narrow_band_dc(v, f, **rk)
+                print("  [trellis] remesh: WARNING inner-removal unavailable "
+                      "(double shell may persist)", flush=True)
+        mesh.init(*rm)
         mesh.simplify(int(max_faces), verbose=verbose)
-        # Upstream's remesh branch STOPS here, leaving non-manifold edges + holes
-        # (fine for texturing, NOT for printing). Add the same cumesh cleaning
-        # the non-remesh branch uses — all GPU, fast — so the mesh is manifold +
-        # watertight without the slow CPU pymeshfix. fill_holes at 1.0 closes the
-        # remaining boundaries (extent ~1 unit) so the slicer accepts it.
+        # With the inner shell gone the surface is near-2-manifold. Clean it
+        # WITHOUT cumesh.repair_non_manifold_edges() — that op SPLITS vertices into
+        # coincident-but-unwelded copies (it does NOT delete faces), which is what
+        # shredded connectivity into the uniform non-manifold scatter and made
+        # trimesh falsely report watertight while the slicer split it into
+        # hundreds of pieces. Prefer the DELETE-faces variant
+        # (remove_non_manifold_faces -> true 2-manifold); end the chain on
+        # fill_holes (never on a split-repair, which would re-open boundaries).
         mesh.remove_duplicate_faces()
-        mesh.repair_non_manifold_edges()
+        _rnf = getattr(mesh, "remove_non_manifold_faces", None)
+        if callable(_rnf):
+            _rnf()
+        else:
+            mesh.repair_non_manifold_edges()  # fallback: only if delete-variant absent
         mesh.remove_small_connected_components(1e-5)
-        mesh.fill_holes(max_hole_perimeter=1.0)
-        mesh.repair_non_manifold_edges()
         mesh.unify_face_orientations()
+        mesh.fill_holes(max_hole_perimeter=1.0)
     else:
         mesh.simplify(int(max_faces) * 3, verbose=verbose)
         mesh.remove_duplicate_faces(); mesh.repair_non_manifold_edges()
@@ -117,6 +202,8 @@ def _trellis_geometry_mesh(m, max_faces, remesh=True,
     conv = ov.copy()
     conv[:, 1] = ov[:, 2]
     conv[:, 2] = -ov[:, 1]
+    print(f"  [trellis] geometry mesh: {len(of)} faces / {len(ov)} verts "
+          "(post inner-shell removal)", flush=True)
     return trimesh.Trimesh(vertices=conv, faces=of, process=False)
 
 
@@ -417,55 +504,64 @@ def main() -> int:
     except Exception:  # noqa: BLE001
         pass
 
-    # Collapse dual-contouring SLIVERS (near-degenerate triangles from o_voxel's
-    # quad-split — these scatter as dark specks across clothes/face/hair and make
-    # the slicer choke, even though they're topologically valid). Merge very-close
-    # vertices to collapse them. Guard: if the merge would OPEN a watertight mesh
-    # (thin walls collapsing), revert — so solid meshes get cleaned and thin ones
-    # are left intact (use PRINT-SAFE for those).
-    try:
-        import pymeshlab
-        pre_wt = mesh.is_watertight
-        ms = pymeshlab.MeshSet()
-        ms.add_mesh(pymeshlab.Mesh(vertex_matrix=mesh.vertices.astype("float64"),
-                                   face_matrix=mesh.faces.astype("int32")))
-        merged = False
+    # Collapse dual-contouring slivers — but ONLY if the mesh is NOT already a
+    # clean 2-manifold. With the inner-shell removal upstream, the geometry path
+    # now yields a watertight manifold, so this block must NOT touch it: the old
+    # UNCONDITIONAL merge_close_vertices(0.02% of bbox-diagonal) + Taubin was
+    # itself welding the two former shell layers / thin walls and folding the
+    # result into the visible scatter of non-manifold edges + dark triangles
+    # (root-cause panel finding). So gate it like the repair blocks above, use an
+    # ABSOLUTE weld tolerance tied to median edge length (not a bbox percentage),
+    # keep Taubin opt-in (default OFF), and accept the candidate only if it is no
+    # worse by a TRUE manifold score (is_watertight alone is blind to >2-face
+    # edges, which is exactly why trimesh said watertight while the slicer split).
+    if not _is_clean_manifold(mesh):
         try:
-            ms.meshing_merge_close_vertices(
-                threshold=pymeshlab.PercentageValue(0.02)); merged = True
-        except Exception:  # noqa: BLE001 — older API / param name
-            try: ms.meshing_merge_close_vertices(); merged = True
+            import numpy as _np
+            import pymeshlab
+            before = _manifold_score(mesh)
+            ms = pymeshlab.MeshSet()
+            ms.add_mesh(pymeshlab.Mesh(vertex_matrix=mesh.vertices.astype("float64"),
+                                       face_matrix=mesh.faces.astype("int32")))
+            merged = False
+            try:
+                med = float(_np.median(mesh.edges_unique_length))
+                ms.meshing_merge_close_vertices(
+                    threshold=pymeshlab.AbsoluteValue(0.25 * med)); merged = True
+            except Exception:  # noqa: BLE001 — older API / no AbsoluteValue
+                try: ms.meshing_merge_close_vertices(); merged = True
+                except Exception: pass  # noqa: BLE001
+            try: ms.meshing_remove_null_faces()
             except Exception: pass  # noqa: BLE001
-        try: ms.meshing_remove_null_faces()
-        except Exception: pass  # noqa: BLE001
-        # Light Taubin smooth (volume-preserving): rounds the flat hole-fill
-        # patches into the surrounding surface AND melts the sliver specks.
-        # TRELLIS_SMOOTH iterations (0 = off / max detail, higher = smoother).
-        _sm = int(os.environ.get("TRELLIS_SMOOTH", "3"))
-        if _sm > 0:
-            try: ms.apply_coord_taubin_smoothing(stepsmoothnum=_sm)
-            except Exception: pass  # noqa: BLE001
-            merged = True
-        if merged:
-            cm = ms.current_mesh()
-            cand = trimesh.Trimesh(vertices=cm.vertex_matrix(),
-                                   faces=cm.face_matrix(), process=False)
-            if cand.is_watertight or not pre_wt:
-                mesh = cand
-                print(f"[trellis] sliver cleanup: {len(mesh.faces)} faces, "
-                      f"watertight={mesh.is_watertight}", flush=True)
-            else:
-                print("[trellis] sliver cleanup reverted (would open the mesh; "
-                      "use TRELLIS_PRINTSAFE=1 for thin subjects)", flush=True)
-    except Exception as e:  # noqa: BLE001
-        print(f"[trellis] WARN sliver cleanup skipped ({e})", flush=True)
+            # Taubin smooth is OFF by default now (the root fix removes the flat
+            # hole-fill patches it used to round). Opt-in via TRELLIS_SMOOTH>0.
+            _sm = int(os.environ.get("TRELLIS_SMOOTH", "0"))
+            if _sm > 0:
+                try: ms.apply_coord_taubin_smoothing(stepsmoothnum=_sm); merged = True
+                except Exception: pass  # noqa: BLE001
+            if merged:
+                cm = ms.current_mesh()
+                cand = trimesh.Trimesh(vertices=cm.vertex_matrix(),
+                                       faces=cm.face_matrix(), process=False)
+                if _manifold_score(cand) <= before:
+                    mesh = cand
+                    print(f"[trellis] sliver cleanup: {len(mesh.faces)} faces, "
+                          f"{_manifold_str(mesh)}", flush=True)
+                else:
+                    print("[trellis] sliver cleanup reverted (made topology "
+                          "worse); keeping pre-clean mesh", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[trellis] WARN sliver cleanup skipped ({e})", flush=True)
+    else:
+        print(f"[trellis] mesh already clean 2-manifold "
+              f"({_manifold_str(mesh)}); skipping sliver cleanup", flush=True)
 
     # Orientation: the o_voxel coord swap leaves the model glTF Y-up; our gauntlet
     # + slicer are Z-up. Rotate +90 deg about X so +Y (up) -> +Z (up) = upright.
     mesh.apply_transform(
         trimesh.transformations.rotation_matrix(np.pi / 2.0, [1, 0, 0]))
     print(f"[trellis] final mesh: {len(mesh.faces)} faces, "
-          f"watertight={mesh.is_watertight} (Z-up upright)", flush=True)
+          f"{_manifold_str(mesh)} (Z-up upright)", flush=True)
 
     out = Path(args.output); out.parent.mkdir(parents=True, exist_ok=True)
     mesh.export(str(out))
