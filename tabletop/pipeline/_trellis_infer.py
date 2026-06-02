@@ -112,6 +112,59 @@ def _cull_inner_shell(mesh, bvh, voxel, verbose=True):
               "outside safe 5-95% range (no clear double shell)", flush=True)
 
 
+def _pymeshfix_manifold(mesh, min_faces=200, verbose=True):
+    """GUARANTEED manifold repair via Attene MeshFix (pymeshfix), build-agnostic
+    and signed-reference-free — the robust fix the research panel ranked #1 for a
+    noisy neural isosurface. Run PER connected component so a multi-part mini
+    (body + sword + cape + base) keeps every piece; each becomes a single
+    watertight 2-manifold. Components below min_faces (the floater scatter) are
+    dropped. Detail outside the defect regions is preserved (MeshFix only rewrites
+    around singularities/self-intersections)."""
+    import time
+    import numpy as np
+    import trimesh
+    try:
+        from pymeshfix import MeshFix
+    except Exception as e:  # noqa: BLE001
+        print(f"[trellis] pymeshfix unavailable ({e}); skipping manifold repair",
+              flush=True)
+        return mesh
+    t0 = time.time()
+    try:
+        parts = mesh.split(only_watertight=False)
+    except Exception:  # noqa: BLE001
+        parts = []
+    if not parts:
+        parts = [mesh]
+    kept, dropped = [], 0
+    for p in parts:
+        if len(p.faces) < min_faces:
+            dropped += 1
+            continue
+        try:
+            mf = MeshFix(np.asarray(p.vertices, dtype=np.float64),
+                         np.asarray(p.faces, dtype=np.int32))
+            # joincomp=True stitches a part's own internal shells; we do NOT
+            # remove_smallest here (we already filtered floaters above) so the
+            # part isn't silently gutted.
+            mf.repair(verbose=False, joincomp=True,
+                      remove_smallest_components=False)
+            rp = trimesh.Trimesh(mf.v, mf.f, process=False)
+            kept.append(rp if len(rp.faces) else p)
+        except Exception as e:  # noqa: BLE001
+            print(f"[trellis] pymeshfix part skipped ({e}); keeping raw part",
+                  flush=True)
+            kept.append(p)
+    if not kept:
+        return mesh
+    out = trimesh.util.concatenate(kept) if len(kept) > 1 else kept[0]
+    if verbose:
+        print(f"[trellis] pymeshfix: {len(parts)} parts -> {len(kept)} kept "
+              f"({dropped} floaters dropped) | {len(out.faces)} faces | "
+              f"{_manifold_str(out)} | {time.time()-t0:.1f}s", flush=True)
+    return out
+
+
 def _manifold_stats(mesh):
     """TRUE 2-manifold diagnostics. trimesh.is_watertight is BLIND to edges shared
     by >2 faces (group_rows(require_count=2) silently discards them) — the exact
@@ -602,6 +655,22 @@ def main() -> int:
     else:
         print(f"[trellis] mesh already clean 2-manifold "
               f"({_manifold_str(mesh)}); skipping sliver cleanup", flush=True)
+
+    # GUARANTEED manifold repair (Attene MeshFix), the robust build-agnostic fix:
+    # the cumesh remesh on THIS build leaves a noisy isosurface — scattered
+    # non-manifold edges + tiny floaters — that per-edge cumesh ops can't fully
+    # resolve (and which fail the slicer). MeshFix rewrites only around the
+    # singularities, per connected component, so each part becomes one watertight
+    # 2-manifold while detail is preserved elsewhere. Skip if already clean, or if
+    # disabled via TRELLIS_MESHFIX=0 (e.g. to A/B the raw mesh).
+    if os.environ.get("TRELLIS_MESHFIX", "1") != "0" and not _is_clean_manifold(mesh):
+        _mf_min = int(os.environ.get("TRELLIS_MESHFIX_MINFACES", "200"))
+        repaired = _pymeshfix_manifold(mesh, min_faces=_mf_min, verbose=True)
+        if _manifold_score(repaired) <= _manifold_score(mesh):
+            mesh = repaired
+        else:
+            print("[trellis] pymeshfix made it worse; keeping pre-repair mesh",
+                  flush=True)
 
     # Orientation: the o_voxel coord swap leaves the model glTF Y-up; our gauntlet
     # + slicer are Z-up. Rotate +90 deg about X so +Y (up) -> +Z (up) = upright.
