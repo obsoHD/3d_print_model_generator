@@ -308,10 +308,13 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
             print(f"  [mv] thumbnail copy skipped: {_e}", flush=True)
         # Same finish as single-view TRELLIS: clean-detail gauntlet + direct STL.
         repaired_glb = OUT_MESHES / f"{run_id}.gauntlet.glb"
+        _mv_gargs = ["--no-orient", "--no-solidify", "--no-repair"]
+        if kind == "mini" and os.environ.get("FLATTEN_BASE", "1") != "0":
+            _mv_gargs += ["--flatten-base", str(round(max(1.0, scale_mm / 120.0), 2))]
         rc, _ = _stream(
             [PY, str(HERE / "mesh_gauntlet.py"), "--input", str(mesh_glb),
              "--output", str(repaired_glb), "--scale-mm", str(scale_mm),
-             "--no-orient", "--no-solidify", "--no-repair"],
+             *_mv_gargs],
             label="[2b/4] mesh gauntlet (TRELLIS mv)", timeout=1500)
         src = repaired_glb if (rc == 0 and repaired_glb.exists()) else mesh_glb
         stl_path = Path(out_stl) if out_stl else (OUT_STL / f"{run_id}.stl")
@@ -676,6 +679,11 @@ def run(prompt: str, kind: str = "mini", engine: str = "sparc3d",
                 else:
                     gauntlet_args = []
                     print(f"  [2b/4] mesh gauntlet (repair + orient + seat + solidify)...")
+                # Minis stand on a base — slice a flat closed floor so it's full +
+                # flush on the bed (and the first slicer layer is a solid footprint).
+                if kind == "mini" and os.environ.get("FLATTEN_BASE", "1") != "0":
+                    _fb = round(max(1.0, scale_mm / 120.0), 2)
+                    gauntlet_args = [*gauntlet_args, "--flatten-base", str(_fb)]
                 rc, _gtail = _stream(
                     [PY, str(gauntlet_py),
                      "--input",    str(mesh_glb),

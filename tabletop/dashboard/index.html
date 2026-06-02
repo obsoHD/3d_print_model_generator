@@ -2521,6 +2521,10 @@ function updOuts(stls){
          aria-label="Download ${s.name}" style="display:flex;align-items:center;padding:4px 6px">
         <svg class="ico" style="width:16px;height:16px"><use href="#i-download"/></svg>
       </a>
+      <button class="out-lite" onclick='liteOut(${JSON.stringify(s.name)},this)'
+         title="Lighten ${s.name} for fast slicing — decimate to ~250k tris (keeps shape + watertight)"
+         aria-label="Lighten ${s.name} for slicing"
+         style="display:flex;align-items:center;padding:3px 7px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;color:var(--dim2);font-size:10px;font-weight:700;letter-spacing:.04em">LITE</button>
       <button class="out-del" onclick='delOut(${JSON.stringify(s.name)})'
          title="Delete ${s.name}" aria-label="Delete ${s.name}"
          style="display:flex;align-items:center;padding:4px 6px;background:none;border:0;cursor:pointer;color:var(--dim3)">
@@ -2528,6 +2532,21 @@ function updOuts(stls){
       </button>
     </div>`;
   }).join('');
+}
+
+async function liteOut(name, btn){
+  if(btn && btn.dataset.busy) return;
+  const old = btn ? btn.textContent : '';
+  if(btn){ btn.dataset.busy='1'; btn.textContent='…'; btn.style.opacity='.6'; }
+  toast('Lightening '+name+' for slicing… (this can take ~10–60s)');
+  try{
+    const r = await fetch('/api/decimate', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, target:250000})});
+    const d = await r.json();
+    if(d.ok){ toast('Lightened '+name+' — slice should be fast now'); _outsHash=''; }
+    else toast('Lighten failed: '+(d.error||'unknown'),'err');
+  } catch{ toast('Server error','err'); }
+  finally{ if(btn){ delete btn.dataset.busy; btn.textContent=old||'LITE'; btn.style.opacity=''; } }
 }
 
 async function delOut(name){

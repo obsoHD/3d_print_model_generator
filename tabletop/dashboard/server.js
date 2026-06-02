@@ -597,6 +597,27 @@ function _spawnOrchestrate(args, slug, prompt, kind, engine, mv_engine, withColo
   return { ok: true, pid: child.pid, out_stl: outStl, log: path.basename(logPath), mv_engine: mv_engine || 'zero123' };
 }
 
+// Lighten a finished STL for fast slicing (quadric decimation, in place).
+// Synchronous subprocess — the button shows a spinner while it runs (~10-60s).
+function decimateOutput(opts) {
+  const name = opts && opts.name ? path.basename(String(opts.name)) : '';
+  const target = Math.max(20000, parseInt(opts && opts.target, 10) || 250000);
+  if (!name) return { ok: false, error: 'name required' };
+  if (!/\.stl$/i.test(name)) return { ok: false, error: 'only .stl can be lightened' };
+  const stlPath = path.resolve(path.join(STL_DIR, name));
+  const outRoot = path.resolve(path.join(TABLETOP, 'outputs'));
+  if (!stlPath.startsWith(outRoot)) return { ok: false, error: 'path outside outputs dir' };
+  if (!fs.existsSync(stlPath))      return { ok: false, error: 'not found' };
+  const script = path.join(TABLETOP, 'pipeline', 'decimate_mesh.py');
+  const r = cp.spawnSync(process.env.GEN3D_PY || 'python',
+    ['-u', script, '--input', stlPath, '--target', String(target)],
+    { encoding: 'utf8', timeout: 240000, env: { ...process.env, PYTHONUTF8: '1' } });
+  if (r.status !== 0) {
+    return { ok: false, error: ((r.stderr || r.stdout || 'decimate failed') + '').slice(-500) };
+  }
+  return { ok: true, name, target, log: ((r.stdout || '') + '').slice(-300) };
+}
+
 // Open file in OS file manager. Locked to our outputs dir for safety.
 function revealFile(opts) {
   const target = opts && opts.path ? String(opts.path) : '';
@@ -768,6 +789,7 @@ const server = http.createServer(async (req, res) => {
       else if (url === '/api/kill')  result = killPipeline();
       else if (url === '/api/forcekill') result = forceKill(body);
       else if (url === '/api/delete') result = deleteOutput(body);
+      else if (url === '/api/decimate') result = decimateOutput(body);
       else if (url === '/api/reveal') result = revealFile(body);
       else { res.writeHead(404); res.end('not found'); return; }
     } catch (e) {

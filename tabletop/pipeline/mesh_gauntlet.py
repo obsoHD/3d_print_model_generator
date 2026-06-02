@@ -98,6 +98,38 @@ def seat_to_bed(mesh):
     return mesh
 
 
+def flatten_base(mesh, lift_mm: float = 1.2):
+    """Give the model a FLAT, CLOSED, FULL bottom so it sits flush on the bed and
+    the first layer is a solid footprint (not a single-point/rounded contact).
+
+    The generated base is often a rounded/uneven blob on the underside (the
+    underside is never seen in the input image, so it's inferred). We slice a
+    horizontal plane `lift_mm` above the lowest point and cap the cut — trimesh's
+    plane slice with cap=True triangulates the cross-section into a flat closed
+    floor. Call AFTER scaling (lift is in real mm) and re-seat afterwards.
+
+    Reverts if the cut would empty the mesh, isn't watertight, or removes most of
+    the volume (a safety net against a bad cut plane)."""
+    import trimesh
+    try:
+        mn, mx = mesh.bounds
+        z0 = mn[2]
+        zc = z0 + float(lift_mm)
+        if zc >= mx[2]:          # lift taller than the model — skip
+            return mesh, False
+        vol0 = mesh.volume if mesh.is_volume else None
+        cut = mesh.slice_plane([0, 0, zc], [0, 0, 1], cap=True)
+        if cut is None or len(cut.faces) == 0:
+            return mesh, False
+        if not cut.is_watertight:
+            return mesh, False
+        if vol0 and cut.is_volume and cut.volume < 0.5 * vol0:
+            return mesh, False   # cut removed too much — bad plane
+        return cut, True
+    except Exception:  # noqa: BLE001
+        return mesh, False
+
+
 def solidify_via_blender(input_glb: str, output_glb: str,
                          voxel_size_mm: float) -> bool:
     """Subprocess: Blender voxel-remesh, which produces a watertight solid
@@ -139,7 +171,8 @@ def run_gauntlet(input_mesh: str, output_mesh: str,
                  do_orient: bool = True,
                  do_repair: bool = True,
                  do_solidify: bool = True,
-                 force_voxel: float = 0.0) -> dict:
+                 force_voxel: float = 0.0,
+                 flatten_base_mm: float = 0.0) -> dict:
     """Full pipeline. Returns report dict; also writes output_mesh GLB."""
     import numpy as np
     import trimesh
@@ -216,6 +249,18 @@ def run_gauntlet(input_mesh: str, output_mesh: str,
 
     # 5. seat to bed
     mesh = seat_to_bed(mesh)
+
+    # 5a. flatten the base — slice a flat closed floor so the bottom is full and
+    # sits flush on the bed (fixes "base floor isn't closed / first layer is a
+    # dot"). Done in mm (post-scale); re-seat after.
+    if flatten_base_mm and flatten_base_mm > 0:
+        mesh, did = flatten_base(mesh, lift_mm=flatten_base_mm)
+        mesh = seat_to_bed(mesh)
+        rpt["base_flattened"] = bool(did)
+        print(f"[gauntlet] flatten base ({flatten_base_mm}mm): "
+              f"{'flat closed floor' if did else 'skipped/reverted'}, "
+              f"watertight={mesh.is_watertight}", flush=True)
+
     mn, mx = mesh.bounds
     rpt["final_bbox_mm"]  = [list(map(float, mn)), list(map(float, mx))]
     rpt["final_dims_mm"]  = list(map(float, mx - mn))
@@ -330,6 +375,9 @@ def main() -> int:
                     help="Mini-heal: fine voxel remesh at this mm size. "
                          "Guarantees manifold + fuses detached appendages "
                          "(e.g. a grounded sword). Use ~scale/90 for minis.")
+    ap.add_argument("--flatten-base", type=float, default=0.0,
+                    help="Slice a flat closed floor this many mm above the lowest "
+                         "point so the base is full + flush on the bed. 0 = off.")
     args = ap.parse_args()
     rpt = run_gauntlet(args.input, args.output,
                        min_wall_mm=args.min_wall_mm,
@@ -337,7 +385,8 @@ def main() -> int:
                        do_orient=not args.no_orient,
                        do_repair=not args.no_repair,
                        do_solidify=not args.no_solidify,
-                       force_voxel=args.force_voxel)
+                       force_voxel=args.force_voxel,
+                       flatten_base_mm=args.flatten_base)
     sidecar = Path(args.output).with_suffix(".gauntlet.json")
     sidecar.write_text(json.dumps(rpt, indent=2), encoding="utf-8")
     print(f"[gauntlet] report -> {sidecar.name}", flush=True)
