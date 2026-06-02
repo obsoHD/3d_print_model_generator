@@ -188,6 +188,49 @@ def _pymeshfix_manifold(mesh, min_faces=200, verbose=True):
     return out
 
 
+def _alpha_wrap_remesh(mesh, alpha_fraction=None, verbose=True):
+    """CGAL Alpha Wrapping via pymeshlab.generate_alpha_wrap — the field-standard,
+    soup-ROBUST way to turn a self-intersecting / non-manifold / fragmented neural
+    mesh into a single WATERTIGHT, 2-manifold, intersection-free surface that
+    ENCLOSES the input. Unlike MeshFix it deletes nothing — it carves a shrink-wrap
+    from outside until it hits the geometry, so overlapping shells, 1000 floaters
+    and 20k self-intersections simply don't matter; the whole figure is kept.
+
+    alpha_fraction = carving cell size as a fraction of the bbox diagonal (smaller
+    = finer detail but more compute). offset_fraction = how tightly it hugs the
+    surface (CGAL recommends alpha/30). Default alpha ~ diag/500 ~= 0.4mm on a
+    160mm mini — recovers face/cloth detail while staying robust. Tune via
+    TRELLIS_ALPHA (e.g. 0.0015 finer / 0.003 coarser+faster)."""
+    import time
+    import trimesh
+    import pymeshlab
+    af = alpha_fraction if alpha_fraction is not None else \
+        float(os.environ.get("TRELLIS_ALPHA", "0.002"))
+    of = af / 30.0
+    t0 = time.time()
+    try:
+        ms = pymeshlab.MeshSet()
+        ms.add_mesh(pymeshlab.Mesh(vertex_matrix=mesh.vertices.astype("float64"),
+                                   face_matrix=mesh.faces.astype("int32")))
+        ms.generate_alpha_wrap(alpha_fraction=af, offset_fraction=of)
+        cm = ms.current_mesh()
+        out = trimesh.Trimesh(vertices=cm.vertex_matrix(),
+                              faces=cm.face_matrix(), process=False)
+        if not len(out.faces):
+            print("[trellis] alpha-wrap produced empty mesh; keeping pre-wrap",
+                  flush=True)
+            return mesh
+        if verbose:
+            print(f"[trellis] alpha-wrap: {len(mesh.faces)} -> {len(out.faces)} "
+                  f"faces (alpha={af}, offset={of:.5f}) | {_manifold_str(out)} | "
+                  f"{time.time()-t0:.1f}s", flush=True)
+        return out
+    except Exception as e:  # noqa: BLE001
+        print(f"[trellis] alpha-wrap failed ({e}); keeping pre-wrap mesh",
+              flush=True)
+        return mesh
+
+
 def _manifold_stats(mesh):
     """TRUE 2-manifold diagnostics. trimesh.is_watertight is BLIND to edges shared
     by >2 faces (group_rows(require_count=2) silently discards them) — the exact
@@ -586,6 +629,20 @@ def main() -> int:
                 print(f"[trellis] decimated -> {len(mesh.faces)} faces", flush=True)
             except Exception as e:  # noqa: BLE001
                 print(f"[trellis] WARN decimation failed ({e}); raw mesh", flush=True)
+
+    # === PRINTABLE MANIFOLD: CGAL Alpha Wrap (default) ===
+    # The cumesh dual-contour output on this build is triangle SOUP (self-
+    # intersecting, ~1000 overlapping fragments) that no per-edge repair or MeshFix
+    # can fix without destroying it. Alpha wrapping shrink-wraps a single
+    # watertight 2-manifold around the whole figure — robust to all of that, keeps
+    # the model. This is the printable geometry. Set TRELLIS_ALPHAWRAP=0 to A/B the
+    # raw mesh (and fall through to the legacy additive cleanup below).
+    if os.environ.get("TRELLIS_ALPHAWRAP", "1") != "0" and not _is_clean_manifold(mesh):
+        wrapped = _alpha_wrap_remesh(mesh, verbose=True)
+        # Accept only if it kept a real volume (alpha wrap encloses, so it should
+        # never collapse — but guard anyway) and is actually cleaner.
+        if len(wrapped.faces) > 0 and _manifold_score(wrapped) < _manifold_score(mesh):
+            mesh = wrapped
 
     # Manifold cleanup — but ONLY if cumesh didn't already give us a clean
     # watertight mesh. cumesh's remesh+clean usually outputs watertight; our
