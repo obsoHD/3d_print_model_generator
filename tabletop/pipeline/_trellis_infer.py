@@ -645,6 +645,22 @@ def main() -> int:
             except Exception as e:  # noqa: BLE001
                 print(f"[trellis] WARN decimation failed ({e}); raw mesh", flush=True)
 
+    # MEMORY-SAFETY (OOM fix): drop any baked texture/UV BEFORE the manifold ops.
+    # On the textured to_glb path (colour=on) the mesh carries a 1024^2 texture and
+    # is watertight=False = thousands of components; the very next op,
+    # mesh.split() inside the manifold check, makes a submesh per component and
+    # trimesh COPIES the texture into every one — a sub-second 90GB+ balloon that
+    # hits the cgroup cap and gets the process OOM-killed (peak == mem.max,
+    # invisible to the 2s monitor). We print geometry, not colour (alpha-wrap
+    # discards the texture anyway), so reduce to a plain geometry mesh here.
+    # No-op for the geometry-only path (already untextured).
+    if getattr(mesh, "visual", None) is not None and \
+            type(mesh.visual).__name__ == "TextureVisuals":
+        print(f"[trellis] dropping baked texture before manifold ops (OOM-safety) "
+              f"— {len(mesh.faces)} faces", flush=True)
+        mesh = trimesh.Trimesh(vertices=np.asarray(mesh.vertices),
+                               faces=np.asarray(mesh.faces), process=False)
+
     # === PRINTABLE MANIFOLD: CGAL Alpha Wrap (default) ===
     # The cumesh dual-contour output on this build is triangle SOUP (self-
     # intersecting, ~1000 overlapping fragments) that no per-edge repair or MeshFix
