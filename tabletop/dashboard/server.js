@@ -454,6 +454,93 @@ function getStatus() {
   return { ts: now, gpu, sys, proc, current, history: runs, stls, log: latestLog };
 }
 
+// ── ADMIN / INTROSPECTION ────────────────────────────────────────────────────
+// Self-describing surface so an admin LLM can drive the whole app without
+// reading the source. Mirrors what launchRun() actually accepts.
+function apiCapabilities() {
+  return {
+    ok: true,
+    app: 'Pipeline Studio — local image/prompt -> printable 3D',
+    docs: 'tabletop/dashboard/ADMIN_API.md (in repo)',
+    engines: {
+      trellis:    'TRELLIS.2 4B — single image -> 3D. Default, best detail.',
+      trellis_mv: 'TRELLIS.2 multi-view (front/left/back or turntable). Experimental.',
+      hunyuan21:  'Hunyuan3D 2.1 — single image.',
+      hunyuan2mv: 'Hunyuan3D 2 multi-view — trained for MV, best for back coverage.',
+      triposg:    'TripoSG SDF — sharp watertight, single image.',
+      craftsman:  'CraftsMan3D — coarse + normal refine.',
+      hi3dgen:    'Hi3DGen — normal-bridged geometry.',
+      parametric: 'build123d parametric terrain — watertight by construction.',
+    },
+    kinds:    { mini: 'figure/character (~160mm, gets a flat base)',
+                terrain: 'tabletop terrain', prop: 'standalone prop' },
+    printers: ['resin', 'fdm'],
+    detail_presets: {
+      fast: 'TRELLIS_ALPHA=0.45 (~0.7mm, ~3min)',
+      balanced: 'TRELLIS_ALPHA=0.3 (~0.5mm, ~5min, default)',
+      fine: 'TRELLIS_ALPHA=0.15 (~0.34mm, ~12min)',
+      ultra: 'TRELLIS_ALPHA=0.1 (~0.23mm, ~25min)',
+    },
+    run_params: {
+      engine: 'one of engines{} (default hunyuan)',
+      kind: 'mini|terrain|prop (default terrain)',
+      printer: 'resin|fdm (default resin)',
+      prompt: 'text — names the model; also the gen prompt if no image',
+      detail: 'fast|balanced|fine|ultra (TRELLIS alpha-wrap fineness)',
+      with_color: 'bool — bake TRELLIS texture (viewer only, slower)',
+      seed: 'int (optional)',
+      concept_image_data_url: 'data:image/...;base64,... — single-view upload',
+      input_image_path: 'server path to an existing image instead of upload',
+      'mv_front_data/mv_left_data/mv_back_data': 'data URLs for multi-view engines',
+      mv_gif_data: 'data URL of a turntable gif/mp4 (auto-split to 3 views)',
+      mv_reverse: 'bool — reverse turntable spin direction',
+      mv_engine: 'multi-view backend (hunyuan2mv|trellis_mv)',
+    },
+    env_knobs: {
+      TRELLIS_ALPHA: 'alpha-wrap fineness %% of bbox diag (set via detail preset)',
+      TRELLIS_ALPHAWRAP: '1 (default) | 0 to skip the printable alpha-wrap',
+      TRELLIS_TEXTURE: '0 (default, geometry) | 1 bake colour',
+      TRELLIS_MAX_FACES: 'pre-wrap face cap (default 2_000_000)',
+      TRELLIS_PRINTSAFE: '1 = blender voxel-remesh (thickens thin features)',
+      FLATTEN_BASE: '1 (default) | 0 to skip the flat closed base for minis',
+    },
+    endpoints: {
+      'POST /api/run': 'start a generation (run_params)',
+      'POST /api/concept': 'generate one concept image {prompt, seed?}',
+      'POST /api/kill': 'stop the running pipeline',
+      'POST /api/forcekill': 'stop + delete a run {run_id?}',
+      'POST /api/delete': 'delete an output {name}',
+      'POST /api/decimate': 'lighten an STL {name, target?}',
+      'POST /api/reveal': 'open file in host file-manager {path} (host only)',
+      'GET /api/status': 'live state: gpu, sys, proc, current run, history, stls, log',
+      'GET /api/health[?run=1]': 'engine self-test report',
+      'GET /api/capabilities': 'this document',
+      'GET /api/logs': 'list run log filenames (newest first)',
+      'GET /api/log/<file>[?full=1]': 'run log text (8KB tail, or full)',
+      'GET /api/mesh/<file.glb>': 'GLB bytes',
+      'GET /api/image/<file.png>': 'concept image bytes',
+      'GET /api/download/<file>': 'force-download STL/GLB/3MF',
+    },
+    busy: !!_stageCache.running,
+  };
+}
+
+// List run log filenames, newest first (for an admin LLM to pick + fetch).
+function listLogs(limit = 50) {
+  try {
+    if (!fs.existsSync(LOG_DIR)) return { ok: true, logs: [] };
+    const logs = fs.readdirSync(LOG_DIR)
+      .filter(f => f.endsWith('.log'))
+      .map(f => { const st = fs.statSync(path.join(LOG_DIR, f));
+                  return { name: f, bytes: st.size, mtime: st.mtime.toISOString() }; })
+      .sort((a, b) => b.mtime.localeCompare(a.mtime))
+      .slice(0, limit);
+    return { ok: true, logs };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
 // ── LAUNCH / KILL ────────────────────────────────────────────────────────────
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -832,13 +919,24 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404); res.end('not found');
     }
 
+  } else if (url === '/api/capabilities') {
+    const body = JSON.stringify(apiCapabilities());
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+    res.end(body);
+
+  } else if (url === '/api/logs') {
+    const body = JSON.stringify(listLogs());
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+    res.end(body);
+
   } else if (url.startsWith('/api/log/')) {
-    const fname = decodeURIComponent(url.slice('/api/log/'.length));
+    const fname = decodeURIComponent(url.slice('/api/log/'.length).split('?')[0]);
     const fpath = path.join(LOG_DIR, path.basename(fname));
+    // ?full=1 returns the whole log (for debugging); default = last 8 KB tail.
+    const wantFull = /[?&]full=1\b/.test(req.url);
     if (fs.existsSync(fpath) && fname.endsWith('.log')) {
-      // Return last ~8 KB to keep responses small
       const stat = fs.statSync(fpath);
-      const start = Math.max(0, stat.size - 8192);
+      const start = wantFull ? 0 : Math.max(0, stat.size - 8192);
       const fd = fs.openSync(fpath, 'r');
       const buf = Buffer.alloc(stat.size - start);
       fs.readSync(fd, buf, 0, buf.length, start);
