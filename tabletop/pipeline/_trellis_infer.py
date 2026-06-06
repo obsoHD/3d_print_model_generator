@@ -654,8 +654,22 @@ def main() -> int:
     # invisible to the 2s monitor). We print geometry, not colour (alpha-wrap
     # discards the texture anyway), so reduce to a plain geometry mesh here.
     # No-op for the geometry-only path (already untextured).
+    _src_verts = _src_colors = None
     if getattr(mesh, "visual", None) is not None and \
             type(mesh.visual).__name__ == "TextureVisuals":
+        # Sample the baked texture into per-vertex colour BEFORE dropping it — an
+        # (N,4) array, cheap, no split() — so we can paint it back onto the
+        # printable geometry after the wrap (the viewer's "Colour ON"). Then strip
+        # to plain geometry for the OOM-safe manifold ops.
+        try:
+            _cv = mesh.visual.to_color()
+            _src_colors = np.asarray(_cv.vertex_colors)
+            _src_verts = np.asarray(mesh.vertices, dtype=np.float64)
+            print(f"[trellis] captured baked colour from texture "
+                  f"({len(_src_colors)} verts)", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[trellis] colour capture failed ({e}); preview will be grey",
+                  flush=True)
         print(f"[trellis] dropping baked texture before manifold ops (OOM-safety) "
               f"— {len(mesh.faces)} faces", flush=True)
         mesh = trimesh.Trimesh(vertices=np.asarray(mesh.vertices),
@@ -674,6 +688,20 @@ def main() -> int:
         # never collapse — but guard anyway) and is actually cleaner.
         if len(wrapped.faces) > 0 and _manifold_score(wrapped) < _manifold_score(mesh):
             mesh = wrapped
+
+    # COLOUR: paint the captured baked colour onto the (re-meshed) printable
+    # geometry by closest source vertex, so the saved GLB carries colour for the
+    # viewer's "Colour ON". Done in the SAME coord frame as capture (pre-rotation).
+    # The printed STL is unaffected — colour is per-vertex preview data only.
+    if _src_colors is not None and len(_src_colors) and len(mesh.vertices):
+        try:
+            from scipy.spatial import cKDTree
+            _, _ci = cKDTree(_src_verts).query(np.asarray(mesh.vertices, dtype=np.float64))
+            mesh.visual.vertex_colors = _src_colors[_ci]
+            print(f"[trellis] baked colour transferred onto {len(mesh.vertices)} "
+                  "verts (viewer preview)", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[trellis] colour transfer skipped ({e})", flush=True)
 
     # Manifold cleanup — but ONLY if cumesh didn't already give us a clean
     # watertight mesh. cumesh's remesh+clean usually outputs watertight; our
